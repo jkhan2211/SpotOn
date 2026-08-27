@@ -1,0 +1,29 @@
+.footer {
+  background-color: var(--color-primary);
+  border-top: 1px solid var(--color-primary-light);
+  padding: 1.75rem 1.5rem;
+  text-align: center;
+}
+
+.footer__inner {
+  max-width: var(--max-width);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.footer__text {
+  font-size: 0.88rem;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.footer__highlight {
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+.footer__sub {
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.38);
+}

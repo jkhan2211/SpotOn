@@ -1,0 +1,600 @@
+/* ═══════════════════════════════════════════════════════════════════
+   SitePlan — CSS layout, no SVG coordinates
+═══════════════════════════════════════════════════════════════════ */
+
+.siteplan {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  height: 100%;
+  position: relative;
+}
+
+.siteplan__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.siteplan__title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--color-primary);
+  letter-spacing: -0.01em;
+}
+
+.siteplan__subtitle {
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+  margin-top: 1px;
+}
+
+/* ── Capacity bar ── */
+.capacity-bar {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 0.5rem 0.85rem;
+  flex-shrink: 0;
+}
+
+.capacity-bar__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 0.35rem;
+}
+
+.capacity-bar__title {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
+.capacity-bar__count {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.capacity-bar__count strong {
+  color: var(--color-accent);
+  font-weight: 700;
+}
+
+.capacity-bar__track {
+  height: 6px;
+  background: var(--color-border);
+  border-radius: 100px;
+  overflow: hidden;
+}
+
+.capacity-bar__fill {
+  height: 100%;
+  background: var(--color-accent);
+  border-radius: 100px;
+  transition: width 0.5s ease;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   COMMUNITY PLAN
+═══════════════════════════════════════════════════════════════════ */
+.community-plan {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  background: #edf1ed;
+  border: 1px solid #c0ccbe;
+  border-radius: 10px;
+}
+
+/* ── Landscape perimeter edge ── */
+.landscape-edge {
+  background: #c5dfc6;
+  border-bottom: 1px solid #a8cfa9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  padding: 0.3rem 1rem;
+  flex-shrink: 0;
+}
+
+.landscape-edge:last-of-type {
+  border-bottom: none;
+  border-top: 1px solid #a8cfa9;
+}
+
+.landscape-edge__label {
+  font-size: 0.6rem;
+  font-weight: 700;
+  color: #2e6b30;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.tree {
+  font-size: 0.85rem;
+  line-height: 1;
+  user-select: none;
+}
+
+/* ── Sidewalk ── */
+.sidewalk {
+  height: 5px;
+  background: #dde1e3;
+  border-top: 1px solid #c8cdd0;
+  border-bottom: 1px solid #c8cdd0;
+  flex-shrink: 0;
+}
+
+/* ── Internal lane ── */
+.lane {
+  background: #b0b6c0;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 1rem;
+  flex-shrink: 0;
+  gap: 0.5rem;
+}
+
+.lane__marking {
+  flex: 1;
+  height: 2px;
+  background: repeating-linear-gradient(
+    90deg,
+    #e8eaed 0px, #e8eaed 12px,
+    transparent 12px, transparent 20px
+  );
+}
+
+.lane__name {
+  font-size: 0.58rem;
+  font-weight: 700;
+  color: #f1f5f9;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ── Driveway row ── */
+.driveway-row {
+  background: #d4d8dc;
+  height: 10px;
+  flex-shrink: 0;
+  padding: 0 0.75rem;
+}
+
+.driveway-cells {
+  display: flex;
+  height: 100%;
+  gap: 2px;
+}
+
+.driveway-cell {
+  flex: 1;
+  background: #c0c6cc;
+  border-radius: 0 0 2px 2px;
+}
+
+/* ── Block row ── */
+.block-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.6rem 0.75rem 0;
+  background: #edf1ed;
+  flex-shrink: 0;
+}
+
+.block-row--lane-side {
+  padding-top: 0;
+  padding-bottom: 0.6rem;
+  align-items: flex-end;
+}
+
+.block-row__island {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  align-self: center;
+  background: #c5dfc6;
+  border: 1px solid #a8cfa9;
+  border-radius: 6px;
+  padding: 0.4rem 0.5rem;
+  min-height: 40px;
+}
+
+/* ── Townhome block ── */
+.th-block {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.th-block__label {
+  font-size: 0.55rem;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 0 2px;
+}
+
+.th-block__inner {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.th-block__inner--right {
+  flex-direction: row;
+}
+
+.th-block__inner--left {
+  flex-direction: row-reverse;
+}
+
+.th-block__units {
+  display: flex;
+  gap: 1px;
+}
+
+.th-block__bottom-bay {
+  margin-top: 3px;
+}
+
+/* ── Individual townhome unit ── */
+.th-unit {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 32px;
+}
+
+/* flip = faces north (doors at top) */
+.th-unit--flip {
+  flex-direction: column-reverse;
+}
+
+.th-unit__roof {
+  width: 0;
+  height: 0;
+  border-left: 16px solid transparent;
+  border-right: 16px solid transparent;
+  border-bottom: 9px solid #7a94b0;
+  flex-shrink: 0;
+}
+
+.th-unit--flip .th-unit__roof {
+  border-bottom: none;
+  border-top: 9px solid #7a94b0;
+}
+
+.th-unit__body {
+  width: 32px;
+  height: 30px;
+  background: #c8d4e3;
+  border: 1px solid #a0b4c8;
+  border-top: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: 3px 2px 0;
+  flex-shrink: 0;
+}
+
+.th-unit--flip .th-unit__body {
+  border-top: 1px solid #a0b4c8;
+  border-bottom: none;
+  flex-direction: column-reverse;
+  padding: 0 2px 3px;
+}
+
+.th-unit__window {
+  width: 18px;
+  height: 7px;
+  background: #bfdbfe;
+  border: 1px solid #93c5fd;
+  border-radius: 1px;
+}
+
+.th-unit__door {
+  width: 7px;
+  height: 9px;
+  background: #4a5568;
+  border-radius: 1px 1px 0 0;
+}
+
+.th-unit--flip .th-unit__door {
+  border-radius: 0 0 1px 1px;
+}
+
+.th-unit__num {
+  font-size: 0.48rem;
+  color: #475569;
+  font-weight: 600;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.th-unit__drive {
+  width: 10px;
+  height: 5px;
+  background: #c0c8d0;
+  border-radius: 0 0 2px 2px;
+}
+
+.th-unit--flip .th-unit__drive {
+  border-radius: 2px 2px 0 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   PARKING BAY — sits directly beside or below a townhome block
+═══════════════════════════════════════════════════════════════════ */
+.parking-bay {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.parking-bay--row .parking-bay__stalls {
+  flex-direction: row;
+}
+
+.parking-bay__tag {
+  font-size: 0.5rem;
+  font-weight: 800;
+  color: #64748b;
+  letter-spacing: 0.08em;
+  background: #d0d4da;
+  border: 1px solid #b0b8c4;
+  border-radius: 2px;
+  padding: 0 3px;
+  line-height: 1.6;
+  align-self: stretch;
+  text-align: center;
+}
+
+.parking-bay__stalls {
+  display: flex;
+  flex-direction: row;
+  gap: 2px;
+  background: #c8cdd4;
+  border: 1px solid #a8b0bc;
+  border-radius: 4px;
+  padding: 3px;
+}
+
+/* ── Parking stall ── */
+.stall {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 50px;
+  border-radius: 3px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  gap: 1px;
+  transition: border-color 0.15s, background-color 0.15s, transform 0.1s;
+  position: relative;
+  font-family: var(--font);
+}
+
+.stall + .stall::before {
+  content: '';
+  position: absolute;
+  left: -2px;
+  top: 5px;
+  bottom: 5px;
+  width: 1px;
+  background: rgba(0,0,0,0.1);
+}
+
+.stall:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+  z-index: 1;
+}
+
+.stall:focus-visible {
+  outline: 3px solid #f59e0b;
+  outline-offset: 2px;
+}
+
+.stall--selected {
+  outline: 2.5px solid #f59e0b !important;
+  outline-offset: 1px;
+  z-index: 2;
+}
+
+.stall--available { background: #e6faf8; border-color: #0e9aad; }
+.stall--reserved  { background: #dce3f5; border-color: #0f1f3d; }
+.stall--active    { background: #0f1f3d; border-color: #0e9aad; }
+.stall--unknown   { background: #e2e8f0; border-color: #94a3b8; opacity: 0.6; cursor: not-allowed; }
+
+.stall__id {
+  font-size: 0.52rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  line-height: 1;
+}
+
+.stall--available .stall__id { color: #0b7f90; }
+.stall--reserved  .stall__id { color: #0f1f3d; }
+.stall--active    .stall__id { color: #ffffff; }
+.stall--unknown   .stall__id { color: #64748b; }
+
+.stall__icon {
+  font-size: 0.8rem;
+  line-height: 1;
+}
+
+.stall--available .stall__icon { color: #0e9aad; }
+.stall--reserved  .stall__icon { color: #0f1f3d; }
+.stall--active    .stall__icon { color: #5dd8e8; }
+.stall--unknown   .stall__icon { color: #94a3b8; }
+
+.stall__label {
+  font-size: 0.44rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  line-height: 1;
+}
+
+.stall--available .stall__label { color: #0b7f90; }
+.stall--reserved  .stall__label { color: #334155; }
+.stall--active    .stall__label { color: #e2e8f0; }
+.stall--unknown   .stall__label { color: #94a3b8; }
+
+/* ── Entry label ── */
+.entry-label {
+  text-align: center;
+  font-size: 0.6rem;
+  color: #64748b;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 0.3rem;
+  background: #d4d8dc;
+  border-top: 1px solid #c0c6cc;
+  flex-shrink: 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   SPACE POPOVER
+═══════════════════════════════════════════════════════════════════ */
+.space-popover {
+  position: absolute;
+  bottom: 2.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 0.85rem 1rem;
+  min-width: 180px;
+  box-shadow: var(--shadow-md);
+  z-index: 20;
+  animation: popover-in 0.15s ease;
+}
+
+@keyframes popover-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(6px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+.space-popover__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.space-popover__id {
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--color-primary);
+}
+
+.space-popover__close {
+  background: none;
+  border: none;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  padding: 2px 5px;
+  border-radius: 4px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.space-popover__close:hover { background: var(--color-bg); }
+
+.space-popover__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0.2rem 0.6rem;
+  border-radius: 100px;
+  margin-bottom: 0.6rem;
+}
+
+.space-popover__badge--available { background: #e6faf8; color: #0b7f90; border: 1px solid #0e9aad; }
+.space-popover__badge--reserved  { background: #dce3f5; color: #0f1f3d; border: 1px solid #0f1f3d; }
+.space-popover__badge--active    { background: #0f1f3d; color: #ffffff; border: 1px solid #0e9aad; }
+
+.space-popover__dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.2rem 0.65rem;
+  font-size: 0.8rem;
+}
+
+.space-popover__dl dt { color: var(--color-text-muted); font-weight: 500; }
+.space-popover__dl dd { color: var(--color-text); font-weight: 600; }
+
+.space-popover__note {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   LEGEND
+═══════════════════════════════════════════════════════════════════ */
+.sp-legend {
+  display: flex;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.sp-legend__item {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+}
+
+.sp-legend__dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.6rem;
+  font-weight: 700;
+}
+
+.sp-legend__dot--available { background: #e6faf8; color: #0b7f90; border: 1.5px solid #0e9aad; }
+.sp-legend__dot--reserved  { background: #dce3f5; color: #0f1f3d; border: 1.5px solid #0f1f3d; }
+.sp-legend__dot--active    { background: #0f1f3d; color: #ffffff; border: 1.5px solid #0e9aad; }
+.sp-legend__dot--unknown   { background: #e2e8f0; color: #64748b; border: 1.5px solid #94a3b8; }
+
+/* ── Disclaimer ── */
+.siteplan__disclaimer {
+  font-size: 0.68rem;
+  color: var(--color-text-muted);
+  text-align: center;
+  opacity: 0.65;
+  flex-shrink: 0;
+}
