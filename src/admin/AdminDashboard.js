@@ -1,7 +1,7 @@
 import { useAdminDemo } from './useAdminDemo';
 import AdminSitePlan from './AdminSitePlan';
 import AdminAgentPanel from './AdminAgentPanel';
-import { VehicleReviewQueue, ActivityFeed } from './AdminReview';
+import { VehicleReviewQueue } from './AdminReview';
 import NotificationStack from '../resident/Notification';
 import './AdminDashboard.css';
 
@@ -49,6 +49,7 @@ export default function AdminDashboard() {
         </main>
 
         <aside className="rp-right" aria-label="SpotOn admin agent">
+          <VehicleReviewQueue vehicles={demo.vehicleQueue} onResolve={demo.resolveVehicle} />
           <AdminAgentPanel
             messages={demo.messages}
             isTyping={demo.isTyping}
@@ -56,15 +57,6 @@ export default function AdminDashboard() {
             onQuickAction={demo.triggerQuickAction}
           />
         </aside>
-      </div>
-
-      {/* Bottom panels */}
-      <div className="admin-bottom">
-        <VehicleReviewQueue
-          vehicles={demo.vehicleQueue}
-          onResolve={demo.resolveVehicle}
-        />
-        <ActivityFeed activity={demo.activity} />
       </div>
     </div>
   );

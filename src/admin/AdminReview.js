@@ -54,28 +54,28 @@ function VehicleCard({ vehicle, onResolve }) {
 }
 
 export function VehicleReviewQueue({ vehicles, onResolve }) {
-  const pending = vehicles.filter(v => v.status === 'pending').length;
+  const pending = vehicles.filter(v => v.status === 'pending');
+  if (pending.length === 0) return null;
   return (
-    <section className="review-section" aria-label="Vehicles requiring review">
-      <div className="review-section__header">
-        <h2 className="review-section__title">
-          Vehicles Requiring Review
-          {pending > 0 && <span className="review-section__badge">{pending}</span>}
-        </h2>
-        <p className="review-section__sub">
-          SpotOn surfaces vehicles with no matching permit or resident record. You retain authority over all decisions.
-        </p>
-      </div>
-      {vehicles.length === 0 ? (
-        <p className="review-section__empty">No vehicles currently require review.</p>
-      ) : (
-        <div className="review-section__cards">
-          {vehicles.map(v => (
-            <VehicleCard key={v.id} vehicle={v} onResolve={onResolve} />
-          ))}
+    <div className="vr-banners" aria-label="Vehicles requiring review">
+      {pending.map(v => (
+        <div key={v.id} className="vr-banner" role="alert">
+          <span className="vr-banner__icon" aria-hidden="true">⚠</span>
+          <div className="vr-banner__body">
+            <span className="vr-banner__plate">{v.plate}</span>
+            <span className="vr-banner__meta">Space {v.space} · No permit match</span>
+          </div>
+          <div className="vr-banner__actions">
+            <button className="vr-banner__btn vr-banner__btn--approve"
+              onClick={() => onResolve(v.id, 'recognized')}
+              aria-label={`Mark ${v.plate} recognized`}>✓ Recognize</button>
+            <button className="vr-banner__btn vr-banner__btn--deny"
+              onClick={() => onResolve(v.id, 'unapproved')}
+              aria-label={`Keep ${v.plate} unapproved`}>✕ Dismiss</button>
+          </div>
         </div>
-      )}
-    </section>
+      ))}
+    </div>
   );
 }
 
