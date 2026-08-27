@@ -1,70 +1,47 @@
-# Getting Started with Create React App
+# SpotOn — AI-Powered Community Parking Coordinator
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+SpotOn is a smart visitor parking management system for residential communities. It uses an AI agent to automate permit issuance, waitlist management, and vehicle review — reducing manual overhead for property managers while giving residents a seamless self-serve experience.
 
-## Available Scripts
+## Features
 
-In the project directory, you can run:
+- **Resident Portal** — Request visitor permits, join the waitlist, extend or release permits via a conversational AI agent
+- **Admin Dashboard** — Live site plan with real-time parking state, vehicle review queue, waitlist management, and activity log
+- **AI Agent (SpotOn)** — Handles permit workflows, no-show enforcement, early releases, reallocation, and unknown vehicle flagging
+- **Site Plan** — Visual map of the community with colour-coded stall states (available, reserved, active, temporary, under review)
+- **Unknown Vehicle Handling** — Unrecognised vehicles are flagged amber on the admin view and shown as "Not in Service" on the resident view
 
-### `npm start`
+## Tech Stack
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+- React (Create React App)
+- CSS custom properties — no external UI library
+- All data is mocked/simulated for demo purposes
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+## Getting Started
 
-### `npm test`
+```bash
+npm install
+npm start
+```
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-### `npm run build`
+## Project Structure
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+```
+src/
+├── admin/        # Admin dashboard, site plan, agent panel, data & demo hook
+├── resident/     # Resident portal, site plan, agent panel, data & demo hook
+├── components/   # Shared landing page components (Navbar, Hero, Features, etc.)
+├── pages/        # Top-level page components (HomePage, ResidentPage, AdminPage)
+└── asset/        # Static assets (logo, etc.)
+```
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+## Demo
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+| View | Route |
+|------|-------|
+| Landing | `/` |
+| Resident Portal | `/resident` |
+| Admin Dashboard | `/admin` |
 
-### `npm run eject`
-
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
-
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
-
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
-
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
-
-## Learn More
-
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
-
-To learn React, check out the [React documentation](https://reactjs.org/).
-
-### Code Splitting
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
-
-### Analyzing the Bundle Size
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
-
-### Making a Progressive Web App
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
-
-### Advanced Configuration
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
-
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+> All names, units, plates, and permit data are fictional and simulated.
