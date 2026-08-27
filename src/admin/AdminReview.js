@@ -26,31 +26,10 @@ function VehicleCard({ vehicle, onResolve }) {
       </div>
 
       <dl className="vr-card__dl">
-        <dt>Location</dt>    <dd>{vehicle.space || '—'}</dd>
-        <dt>First seen</dt>  <dd>{vehicle.firstSeen}</dd>
-        <dt>Last seen</dt>   <dd>{vehicle.lastSeen}</dd>
-        <dt>Permit match</dt><dd>{vehicle.permitMatch}</dd>
-        <dt>Resident</dt>    <dd>{vehicle.residentMatch}</dd>
-        <dt>Temp permit</dt> <dd>{vehicle.tempMatch}</dd>
+        <dt>Space</dt>  <dd>{vehicle.space || '—'}</dd>
+        <dt>Seen</dt>   <dd>{vehicle.firstSeen}</dd>
+        <dt>Permit</dt> <dd>{vehicle.permitMatch}</dd>
       </dl>
-
-      {vehicle.observations >= 2 && (
-        <div className="vr-card__history">
-          <span className="vr-card__history-label">Observation history</span>
-          <ul className="vr-card__history-list">
-            {vehicle.history.map((h, i) => (
-              <li key={i}>{h.date} · {h.time}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {vehicle.prevDecision && (
-        <div className="vr-card__prev">
-          <span className="vr-card__prev-label">Previous decision</span>
-          <span>{vehicle.prevDecision.decision} · {vehicle.prevDecision.date}</span>
-        </div>
-      )}
 
       {isPending && (
         <div className="vr-card__actions">
