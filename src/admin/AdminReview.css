@@ -3,6 +3,8 @@
   padding: 1rem 1.5rem;
   background: var(--color-surface);
   border-top: 1px solid var(--color-border);
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .review-section__header {
@@ -221,6 +223,8 @@
   padding: 1rem 1.5rem;
   background: var(--color-bg);
   border-top: 1px solid var(--color-border);
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .activity-feed__title {
