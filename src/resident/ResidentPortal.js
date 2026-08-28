@@ -1,7 +1,6 @@
 import { useResidentDemo } from './useResidentDemo';
 import SitePlan from './SitePlan';
 import AgentPanel from './AgentPanel';
-import PermitSummary from './PermitSummary';
 import NotificationStack from './Notification';
 import { CURRENT_RESIDENT } from './residentData';
 import './ResidentPortal.css';
@@ -9,7 +8,6 @@ import './ResidentPortal.css';
 export default function ResidentPortal() {
   const demo = useResidentDemo();
 
-  const handleExtend = () => demo.triggerQuickAction('extend');
   const handleRelease = () => {
     if (demo.activePermit) {
       demo.sendMessage(`${demo.activePermit.visitor} left early.`);
@@ -42,6 +40,8 @@ export default function ResidentPortal() {
             spaces={demo.spaces}
             selectedSpace={demo.selectedSpace}
             onSelectSpace={(s) => demo.setSelectedSpace(prev => prev?.id === s?.id ? null : s)}
+            activePermit={demo.activePermit}
+            onRelease={handleRelease}
           />
         </main>
 
@@ -59,14 +59,6 @@ export default function ResidentPortal() {
           />
         </aside>
       </div>
-
-      {/* Permit summary strip */}
-      <PermitSummary
-        activePermit={demo.activePermit}
-        waitlistItem={demo.waitlistItem}
-        onExtend={handleExtend}
-        onRelease={handleRelease}
-      />
     </div>
   );
 }

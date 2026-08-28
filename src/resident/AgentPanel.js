@@ -27,29 +27,6 @@ function Message({ msg, onJoinWaitlist, onRespondNoShow, onSimulateGrace, onConf
         <div className={`msg__bubble${msg.processing ? ' msg__bubble--processing' : ''}`}>
           <p>{msg.text}</p>
 
-          {/* Permit card inline */}
-          {msg.permitCard && (
-            <div className="inline-permit-card">
-              <div className="inline-permit-card__row">
-                <span className="inline-permit-card__label">Visitor</span>
-                <span className="inline-permit-card__val">{msg.permitCard.visitor}</span>
-              </div>
-              <div className="inline-permit-card__row">
-                <span className="inline-permit-card__label">Plate</span>
-                <span className="inline-permit-card__val">{msg.permitCard.plate}</span>
-              </div>
-              <div className="inline-permit-card__row">
-                <span className="inline-permit-card__label">Space</span>
-                <span className="inline-permit-card__val">{msg.permitCard.space}</span>
-              </div>
-              <div className="inline-permit-card__row">
-                <span className="inline-permit-card__label">Time</span>
-                <span className="inline-permit-card__val">{msg.permitCard.from}–{msg.permitCard.until}</span>
-              </div>
-              <span className="inline-permit-card__status">{msg.permitCard.status}</span>
-            </div>
-          )}
-
           {/* Waitlist prompt */}
           {msg.waitlistPrompt && (
             <button className="agent-cta agent-cta--primary" onClick={onJoinWaitlist}>
