@@ -3,10 +3,10 @@ import { STATUS } from './residentData';
 import './SitePlan.css';
 
 const STATUS_META = {
-  [STATUS.AVAILABLE]: { label: 'Available',    icon: '✓', mod: 'available' },
-  [STATUS.RESERVED]:  { label: 'Reserved',     icon: '⏱', mod: 'reserved'  },
-  [STATUS.ACTIVE]:    { label: 'Active',        icon: '●', mod: 'active'    },
-  [STATUS.UNKNOWN]:   { label: 'Not in Service', icon: '—', mod: 'unknown'  },
+  [STATUS.AVAILABLE]: { label: 'Available',     icon: '✓', mod: 'available' },
+  [STATUS.RESERVED]:  { label: 'Reserved',      icon: '●', mod: 'reserved'  },
+  [STATUS.ACTIVE]:    { label: 'Occupied',       icon: '●', mod: 'active'    },
+  [STATUS.UNKNOWN]:   { label: 'Not in Service', icon: '✕', mod: 'unknown'  },
 };
 
 // ─── Single parking stall ─────────────────────────────────────────────────────
@@ -118,10 +118,10 @@ function LandscapeEdge({ label, trees = 4 }) {
 }
 
 // ─── Space popover ────────────────────────────────────────────────────────────
-function SpacePopover({ space, onClose }) {
+function SpacePopover({ space, activePermit, onRelease, onClose }) {
   if (!space) return null;
-  const isOwn = space.ownerUnit === '14';
-  const meta  = STATUS_META[space.status];
+  const meta = STATUS_META[space.status];
+  const isOwnPermit = activePermit && activePermit.space === space.id;
   return (
     <div className="space-popover" role="dialog" aria-label={`Details for ${space.id}`}>
       <div className="space-popover__header">
@@ -131,12 +131,19 @@ function SpacePopover({ space, onClose }) {
       <span className={`space-popover__badge space-popover__badge--${space.status}`}>
         {meta.icon} {meta.label}
       </span>
-      {isOwn && space.visitor ? (
-        <dl className="space-popover__dl">
-          <dt>Visitor</dt><dd>{space.visitor}</dd>
-          <dt>Permit</dt><dd>{space.permit}</dd>
-          <dt>Until</dt> <dd>{space.until}</dd>
-        </dl>
+      {isOwnPermit ? (
+        <>
+          <dl className="space-popover__dl">
+            <dt>Visitor</dt><dd>{activePermit.visitor}</dd>
+            <dt>Plate</dt>  <dd>{activePermit.plate}</dd>
+            <dt>Permit</dt> <dd>{activePermit.permitId}</dd>
+            <dt>From</dt>   <dd>{activePermit.from}</dd>
+            <dt>Until</dt>  <dd>{activePermit.until}</dd>
+          </dl>
+          <button className="space-popover__release" onClick={() => { onRelease(); onClose(); }}>
+            🔓 Release Early
+          </button>
+        </>
       ) : space.status !== STATUS.AVAILABLE ? (
         <p className="space-popover__note">Space details are private.</p>
       ) : (
@@ -183,7 +190,7 @@ function CapacityBar({ spaces }) {
 }
 
 // ─── Main SitePlan ────────────────────────────────────────────────────────────
-export default function SitePlan({ spaces, selectedSpace, onSelectSpace }) {
+export default function SitePlan({ spaces, selectedSpace, onSelectSpace, activePermit, onRelease }) {
   const [localSelected, setLocalSelected] = useState(null);
   const active = selectedSpace ?? localSelected;
 
@@ -312,7 +319,12 @@ export default function SitePlan({ spaces, selectedSpace, onSelectSpace }) {
       </div>
 
       {active && (
-        <SpacePopover space={active} onClose={() => handleSelect(null)} />
+        <SpacePopover
+          space={active}
+          activePermit={activePermit}
+          onRelease={onRelease}
+          onClose={() => handleSelect(null)}
+        />
       )}
 
       <p className="siteplan__disclaimer">

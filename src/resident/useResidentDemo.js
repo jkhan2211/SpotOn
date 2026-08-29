@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { INITIAL_SPACES, INITIAL_MESSAGES, STATUS, SCENARIO } from './residentData';
 
 let msgId = 10;
@@ -7,9 +7,16 @@ const now = () => {
   const d = new Date();
   return d.toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit' });
 };
+const formatTime = (iso) => {
+  try {
+    return new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  } catch {
+    return iso;
+  }
+};
 
 export function useResidentDemo() {
-  const [spaces, setSpaces]           = useState(INITIAL_SPACES);
+  const [spaces, setSpaces] = useState(INITIAL_SPACES);
   const [messages, setMessages]       = useState(INITIAL_MESSAGES);
   const [scenario, setScenario]       = useState(SCENARIO.IDLE);
   const [activePermit, setActivePermit] = useState(null);
@@ -19,6 +26,16 @@ export function useResidentDemo() {
   const [isTyping, setIsTyping]       = useState(false);
   const pendingVisitor = useRef('');
   const notifId = useRef(0);
+
+  // ── fetch spaces from backend ─────────────────────────────────────────────
+  const fetchSpaces = useCallback(() => {
+    fetch('http://localhost:8000/api/parking-spaces')
+      .then(res => res.json())
+      .then(data => setSpaces(data.spaces))
+      .catch(err => console.error('Failed to fetch parking spaces:', err));
+  }, []);
+
+  useEffect(() => { fetchSpaces(); }, [fetchSpaces]);
 
   // ── helpers ──────────────────────────────────────────────────────────────────
   const addMsg = useCallback((role, text, extra = {}) => {
@@ -49,15 +66,8 @@ export function useResidentDemo() {
     addMsg('resident', text);
     const lower = text.toLowerCase();
 
-    // ── Scenario 1: normal booking ──────────────────────────────────────────
+    // ── Scenario 1: normal booking — routed to the real backend (see fallback below) ──
     if (scenario === SCENARIO.IDLE) {
-      if (lower.includes('alex') || lower.includes('visitor') || lower.includes('brother') || lower.includes('friend')) {
-        const nameMatch = text.match(/\b([A-Z][a-z]+)\b/);
-        pendingVisitor.current = nameMatch ? nameMatch[1] : 'Alex';
-        setScenario(SCENARIO.BOOKING_PLATE);
-        agentReply(`Sure! What's ${pendingVisitor.current}'s licence plate number?`, 900);
-        return;
-      }
       if (lower.includes('contractor') || lower.includes('blocking') || lower.includes('temporary') || lower.includes('temp')) {
         setScenario(SCENARIO.TEMP_PARKING);
         agentReply("I'll check the temporary resident parking policy and current capacity...", 800, { processing: true });
@@ -76,40 +86,6 @@ export function useResidentDemo() {
         agentReply("The full 7–11 PM window isn't currently available. I found two compatible alternatives:", 1100, { alternatives: ['6:00–8:00 PM', '9:30–11:30 PM'] });
         return;
       }
-      agentReply("I can help with visitor parking, temporary resident parking, or waitlist requests. Try: \"My brother Alex is coming from 2–5 PM\" or use a quick action below.", 900);
-      return;
-    }
-
-    // ── Scenario 1 continued: plate entry ──────────────────────────────────
-    if (scenario === SCENARIO.BOOKING_PLATE) {
-      const plate = text.trim().toUpperCase();
-      setScenario(SCENARIO.BOOKING_CHECKING);
-      agentReply("Checking community parking policy and availability...", 600, { processing: true });
-      setTimeout(() => {
-        setIsTyping(false);
-        // Check if spaces are full (scenario 2)
-        const available = spaces.filter(s => s.status === STATUS.AVAILABLE);
-        if (available.length === 0) {
-          setScenario(SCENARIO.FULL_WAITLIST);
-          setMessages(prev => [...prev, {
-            id: nextId(), role: 'agent', ts: now(),
-            text: "Visitor parking is currently fully allocated during that time. I can place your request on the waitlist and notify you if compatible parking becomes available.",
-            waitlistPrompt: true,
-          }]);
-          return;
-        }
-        const space = available[0];
-        setScenario(SCENARIO.BOOKING_CONFIRMED);
-        setMessages(prev => [...prev, {
-          id: nextId(), role: 'agent', ts: now(),
-          text: `Parking confirmed for ${pendingVisitor.current} from 2:00 PM to 5:00 PM. Visitor space ${space.id} has been reserved.`,
-          permitCard: { visitor: pendingVisitor.current, plate, space: space.id, from: '2:00 PM', until: '5:00 PM', status: 'Upcoming' },
-        }]);
-        updateSpace(space.id, { status: STATUS.RESERVED, ownerUnit: '14', visitor: pendingVisitor.current, permit: 'SP-1042', until: '5:00 PM' });
-        setActivePermit({ visitor: pendingVisitor.current, plate, space: space.id, from: '2:00 PM', until: '5:00 PM', status: 'Upcoming' });
-        pushNotif('success', 'Visitor parking confirmed', `${pendingVisitor.current} — Space ${space.id}, 2:00–5:00 PM`);
-      }, 2000);
-      return;
     }
 
     // ── Scenario 3: early release ───────────────────────────────────────────
@@ -155,18 +131,46 @@ export function useResidentDemo() {
       return;
     }
 
-    // ── fallback ────────────────────────────────────────────────────────────
-    agentReply("I'm here to help with visitor parking, temporary parking, extensions, and waitlist requests. What do you need?", 900);
-  }, [scenario, spaces, activePermit, addMsg, agentReply, pushNotif, updateSpace]);
+    // ── fallback — hits real FastAPI backend ────────────────────────────────
+    setIsTyping(true);
+    fetch('http://localhost:8000/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: text }),
+    })
+      .then(res => res.json())
+      .then(data => {
+        setIsTyping(false);
+        addMsg('agent', data.message);
+        if (data.permit) {
+          const p = data.permit;
+          const permit = {
+            visitor: p.visitor_name,
+            plate: p.visitor_plate,
+            space: p.space_id,
+            from: formatTime(p.start_time),
+            until: formatTime(p.end_time),
+            status: 'Upcoming',
+            permitId: p.permit_id,
+          };
+          setActivePermit(permit);
+          setScenario(SCENARIO.BOOKING_CONFIRMED);
+          updateSpace(permit.space, { status: STATUS.RESERVED, ownerUnit: '14', visitor: permit.visitor, permit: permit.permitId, until: permit.until });
+          pushNotif('success', 'Visitor parking confirmed', `${permit.visitor} — Space ${permit.space}, ${permit.from}–${permit.until}`);
+        }
+        fetchSpaces();
+      })
+      .catch(() => {
+        setIsTyping(false);
+        addMsg('agent', "Sorry, I couldn't reach the SpotOn server. Please try again.");
+      });
+  }, [scenario, activePermit, addMsg, agentReply, pushNotif, updateSpace, fetchSpaces]);
 
   // ── quick actions ─────────────────────────────────────────────────────────
   const triggerQuickAction = useCallback((action) => {
     switch (action) {
       case 'book':
-        addMsg('resident', 'My brother Alex is coming from 2–5 PM.');
-        setScenario(SCENARIO.BOOKING_PLATE);
-        pendingVisitor.current = 'Alex';
-        agentReply("Sure! What's Alex's licence plate number?", 900);
+        sendMessage('My brother Alex is coming from 2–5 PM.');
         break;
       case 'release':
         if (activePermit) {
