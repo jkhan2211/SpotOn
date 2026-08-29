@@ -1,0 +1,11 @@
+vehicle_id,resident_id,plate,make,model,status
+1,10,OQA175,Land Rover,Freelander,active
+2,1,ADM424,Mercedes-Benz,CLK-Class,active
+3,1,CJI606,Lexus,IS,active
+4,4,EPX550,Pontiac,Grand Prix,inactive
+5,9,ZYV547,Mitsubishi,Montero,active
+6,4,UAB906,Hyundai,Santa Fe,active
+7,10,ZRU211,Oldsmobile,Bravada,active
+8,8,OJD738,Saab,9000,inactive
+9,5,DMX792,GMC,3500,active
+10,5,DGE717,Audi,4000,active

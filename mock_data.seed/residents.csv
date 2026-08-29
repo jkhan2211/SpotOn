@@ -1,0 +1,11 @@
+resident_id,unit_number,first_name,last_name,email,status,parking_privileges
+1,14,Netty,Blees,nblees0@pinterest.com,active,enabled
+2,9,Silvano,Cromarty,scromarty1@hubpages.com,active,enabled
+3,39,Karole,Demschke,kdemschke2@walmart.com,active,enabled
+4,3,Vick,Jewise,vjewise3@theglobeandmail.com,active,enabled
+5,35,Duff,Bariball,dbariball4@flickr.com,active,enabled
+6,7,Johann,Leydon,jleydon5@princeton.edu,inactive,disabled
+7,5,Tobe,Pulhoster,tpulhoster6@princeton.edu,active,enabled
+8,6,Maximilien,Culpen,mculpen7@google.pl,inactive,disabled
+9,25,Carin,Nussgen,cnussgen8@slashdot.org,active,enabled
+10,39,Poppy,Le Grove,plegrove9@desdev.cn,inactive,disabled
