@@ -1,10 +1,9 @@
-import csv
-from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import agent.spoton_agent as agent_module
 import agent.admin_agent as admin_agent_module
+from repositories import get_repository
 from tools.parking_tools import (
     last_created_permit,
     release_permit,
@@ -17,8 +16,9 @@ from tools.parking_tools import (
 )
 from tools.vehicle_reports import get_vehicle_reports, mark_expected, notify_security
 
-SPACES_CSV = Path(__file__).parent.parent / "mock_data" / "parking_spaces.csv"
-PERMITS_CSV = Path(__file__).parent.parent / "mock_data" / "permits.csv"
+# All persistence goes through this — CSV today, pluggable later (see
+# repositories/). Routes below never read/write a CSV path directly.
+_repo = get_repository()
 
 app = FastAPI(title="SpotOn API")
 
@@ -48,10 +48,8 @@ def root():
 
 @app.get("/api/parking-spaces")
 def parking_spaces():
-    with open(SPACES_CSV, newline="") as f:
-        rows = list(csv.DictReader(f))
-    with open(PERMITS_CSV, newline="") as f:
-        permits_by_id = {p["permit_id"]: p for p in csv.DictReader(f)}
+    rows = _repo.get_spaces()
+    permits_by_id = {p["permit_id"]: p for p in _repo.get_permits()}
 
     spaces = []
     for r in rows:

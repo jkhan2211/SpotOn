@@ -1,10 +1,10 @@
-import csv
 import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from dotenv import load_dotenv
 from strands import tool
+from repositories import get_repository
 from services.email_service import (
     send_permit_confirmation_email,
     send_visitor_admin_notification,
@@ -20,25 +20,9 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 # shared dict populated by create_permit() / create_temporary_resident_permit(), read by main.py after agent call
 last_created_permit: dict = {}
 
-_BASE = Path(__file__).parent.parent.parent / "mock_data"
-SPACES_CSV = _BASE / "parking_spaces.csv"
-PERMITS_CSV = _BASE / "permits.csv"
-RESIDENTS_CSV = _BASE / "residents.csv"
-VEHICLES_CSV = _BASE / "vehicles.csv"
-WAITLIST_CSV = _BASE / "waitlist.csv"
-
-# permits.csv column order — fixed so every write has the same shape regardless
-# of which permit_type triggered it (visitor rows just get an empty "reason").
-PERMIT_FIELDNAMES = [
-    "permit_id", "resident_id", "visitor_name", "visitor_plate", "space_id",
-    "start_time", "end_time", "status", "permit_type", "reason", "created_at",
-]
-
-WAITLIST_FIELDNAMES = [
-    "waitlist_id", "resident_id", "request_type", "visitor_name", "visitor_plate",
-    "start_time", "end_time", "status", "offered_space_id", "offered_at", "permit_id", "created_at",
-]
-
+# All persistence goes through this — CSV today, pluggable later (see
+# repositories/). Business logic below never touches a CSV path directly.
+_repo = get_repository()
 
 
 def _is_past(iso_time: str) -> bool:
@@ -49,18 +33,6 @@ def _is_past(iso_time: str) -> bool:
     except (ValueError, AttributeError):
         return True
     return dt < datetime.now(timezone.utc)
-
-
-def _read_csv(path):
-    with open(path, newline="") as f:
-        return list(csv.DictReader(f))
-
-
-def _write_csv(path, rows, fieldnames):
-    with open(path, "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=fieldnames)
-        w.writeheader()
-        w.writerows(rows)
 
 
 # ── Resident session context ──────────────────────────────────────────────────
@@ -114,8 +86,7 @@ def lookup_resident_by_unit(unit_number: str, first_name: str | None = None) -> 
     if not normalized:
         return {"status": "not_found", "message": f"{unit_number!r} doesn't look like a valid unit number."}
 
-    residents = _read_csv(RESIDENTS_CSV)
-    matches = [r for r in residents if r["unit_number"] == normalized]
+    matches = _repo.get_residents_by_unit(normalized)
     if not matches:
         return {"status": "not_found", "message": f"No resident found for unit {normalized}."}
 
@@ -153,12 +124,17 @@ def lookup_resident_by_unit(unit_number: str, first_name: str | None = None) -> 
     }
 
 
+def _lookup_resident_by_id(resident_id: str) -> dict | None:
+    """Looks up a resident's own record (unit, name, email) by resident_id — used
+    wherever the acting resident isn't the current session's identified resident,
+    e.g. sending a waitlist offer to whoever is waiting, not whoever released."""
+    return _repo.get_resident_by_id(resident_id)
+
+
 def _get_active_vehicles(resident_id: str) -> list[dict]:
-    vehicles = _read_csv(VEHICLES_CSV)
     return [
         {"plate": v["plate"], "make": v["make"], "model": v["model"]}
-        for v in vehicles
-        if v["resident_id"] == resident_id and v["status"] == "active"
+        for v in _repo.get_active_vehicles_by_resident(resident_id)
     ]
 
 
@@ -177,7 +153,7 @@ def _assign_space_and_create_permit(
     if _is_past(end_time):
         return None, {"error": f"The requested end time {end_time} has already passed."}
 
-    spaces = _read_csv(SPACES_CSV)
+    spaces = _repo.get_spaces()
     if require_space_id is not None:
         space = next((r for r in spaces if r["space_id"] == require_space_id), None)
         if space is None or space["status"] != "offered":
@@ -190,13 +166,11 @@ def _assign_space_and_create_permit(
     permit_id = f"SP-{uuid.uuid4().hex[:6].upper()}"
     now = datetime.now(timezone.utc).isoformat()
 
-    for r in spaces:
-        if r["space_id"] == space["space_id"]:
-            r["status"] = "reserved"
-            r["current_permit_id"] = permit_id
-    _write_csv(SPACES_CSV, spaces, ["space_id", "space_type", "status", "current_permit_id"])
+    _repo.update_space(space["space_id"], status="reserved", current_permit_id=permit_id)
+    # Reflect the just-made update locally so remaining_available_spaces below is
+    # accurate without a second read from the repository.
+    space["status"] = "reserved"
 
-    permits = _read_csv(PERMITS_CSV)
     new_permit = {
         "permit_id": permit_id,
         "resident_id": resident_id,
@@ -210,8 +184,7 @@ def _assign_space_and_create_permit(
         "reason": reason,
         "created_at": now,
     }
-    permits.append(new_permit)
-    _write_csv(PERMITS_CSV, permits, PERMIT_FIELDNAMES)
+    _repo.add_permit(new_permit)
 
     remaining = [r["space_id"] for r in spaces if r["status"] == "available"]
     return new_permit, {"remaining_available_spaces": remaining, "total_spaces": len(spaces)}
@@ -272,7 +245,7 @@ def check_parking_availability() -> dict:
     Returns:
         dict: Available spaces list, occupied count, and total count.
     """
-    rows = _read_csv(SPACES_CSV)
+    rows = _repo.get_spaces()
     available = [r["space_id"] for r in rows if r["status"] == "available"]
     return {
         "available_spaces": available,
@@ -326,7 +299,7 @@ def create_permit(visitor_name: str, visitor_plate: str, start_time: str, end_ti
     }
 
     resident_email = send_permit_confirmation_email(
-        recipient_email=os.environ.get("SPOTON_RECIPIENT_EMAIL", ""),
+        recipient_email=resident["email"],
         permit_id=new_permit["permit_id"],
         visitor_name=visitor_name,
         visitor_plate=new_permit["visitor_plate"],
@@ -346,8 +319,6 @@ def create_permit(visitor_name: str, visitor_plate: str, start_time: str, end_ti
         start_time=start_time,
         end_time=end_time,
     )
-    # SES sandbox still requires sending to the one verified inbox — but the resolved
-    # resident's real email is preserved in application context here, not discarded.
     result["resident_email"] = resident["email"]
 
     result["resident_email_sent"] = resident_email.get("success", False)
@@ -446,7 +417,7 @@ def create_temporary_resident_permit(vehicle_plate: str, start_time: str, end_ti
     }
 
     resident_email = send_temp_resident_confirmation_email(
-        recipient_email=os.environ.get("SPOTON_RECIPIENT_EMAIL", ""),
+        recipient_email=resident["email"],
         permit_id=new_permit["permit_id"],
         vehicle_plate=new_permit["visitor_plate"],
         space_id=new_permit["space_id"],
@@ -482,8 +453,7 @@ def release_permit(permit_id: str) -> dict:
     permit_type = visitor and permit_type = temporary_resident. Idempotent: calling it
     again on an already-released permit is a safe no-op, not a second free.
     """
-    permits = _read_csv(PERMITS_CSV)
-    permit = next((p for p in permits if p["permit_id"] == permit_id), None)
+    permit = _repo.get_permit(permit_id)
     if permit is None:
         return {"error": "not_found", "message": f"No permit found with id {permit_id}."}
 
@@ -497,16 +467,12 @@ def release_permit(permit_id: str) -> dict:
             "message": f"Permit {permit_id} was already {permit['status']}.",
         }
 
-    permit["status"] = "released"
-    _write_csv(PERMITS_CSV, permits, PERMIT_FIELDNAMES)
+    _repo.update_permit(permit_id, status="released")
 
     space_id = permit["space_id"]
-    spaces = _read_csv(SPACES_CSV)
-    for s in spaces:
-        if s["space_id"] == space_id and s["current_permit_id"] == permit_id:
-            s["status"] = "available"
-            s["current_permit_id"] = ""
-    _write_csv(SPACES_CSV, spaces, ["space_id", "space_type", "status", "current_permit_id"])
+    space = _repo.get_space(space_id)
+    if space is not None and space["current_permit_id"] == permit_id:
+        _repo.update_space(space_id, status="available", current_permit_id="")
 
     result = {
         "success": True,
@@ -529,8 +495,9 @@ def release_permit(permit_id: str) -> dict:
     else:
         occupant_label, occupant_name = "Visitor", permit["visitor_name"]
 
+    releasing_resident = _lookup_resident_by_id(permit["resident_id"])
     resident_email = send_release_confirmation_email(
-        recipient_email=os.environ.get("SPOTON_RECIPIENT_EMAIL", ""),
+        recipient_email=releasing_resident["email"] if releasing_resident else "",
         permit_id=permit_id,
         space_id=space_id,
         occupant_label=occupant_label,
@@ -576,8 +543,7 @@ def get_permit_status(permit_id: str) -> dict:
         dict: permit_id, status, space_id, visitor_name, permit_type — or an error if
         no permit exists with that id.
     """
-    permits = _read_csv(PERMITS_CSV)
-    permit = next((p for p in permits if p["permit_id"] == permit_id), None)
+    permit = _repo.get_permit(permit_id)
     if permit is None:
         return {"error": f"No permit found with id {permit_id}."}
     return {
@@ -650,9 +616,7 @@ def join_waitlist(
         "permit_id": "",
         "created_at": now,
     }
-    entries = _read_csv(WAITLIST_CSV)
-    entries.append(row)
-    _write_csv(WAITLIST_CSV, entries, WAITLIST_FIELDNAMES)
+    _repo.add_waitlist_entry(row)
 
     return {"success": True, "waitlist_id": waitlist_id, "status": "waiting"}
 
@@ -661,7 +625,7 @@ def _match_waitlist_for_released_space() -> dict | None:
     """Deterministic FIFO match — no LLM involved. Picks the oldest still-relevant
     ("waiting", not already past its end_time) waitlist entry. Does not touch any
     state; the caller decides what space to offer it."""
-    entries = _read_csv(WAITLIST_CSV)
+    entries = _repo.get_waitlist_entries()
     now = datetime.now(timezone.utc)
     candidates = []
     for e in entries:
@@ -685,23 +649,12 @@ def _offer_space_to_waitlist_entry(waitlist_id: str, space_id: str) -> dict:
     the offer email. Called by release_permit() right after a space is freed."""
     now = datetime.now(timezone.utc).isoformat()
 
-    entries = _read_csv(WAITLIST_CSV)
-    entry = next((e for e in entries if e["waitlist_id"] == waitlist_id), None)
-    for e in entries:
-        if e["waitlist_id"] == waitlist_id:
-            e["status"] = "offered"
-            e["offered_space_id"] = space_id
-            e["offered_at"] = now
-    _write_csv(WAITLIST_CSV, entries, WAITLIST_FIELDNAMES)
+    entry = _repo.update_waitlist_entry(waitlist_id, status="offered", offered_space_id=space_id, offered_at=now)
+    _repo.update_space(space_id, status="offered")
 
-    spaces = _read_csv(SPACES_CSV)
-    for s in spaces:
-        if s["space_id"] == space_id:
-            s["status"] = "offered"
-    _write_csv(SPACES_CSV, spaces, ["space_id", "space_type", "status", "current_permit_id"])
-
+    waiting_resident = _lookup_resident_by_id(entry["resident_id"])
     email_result = send_waitlist_offer_email(
-        recipient_email=os.environ.get("SPOTON_RECIPIENT_EMAIL", ""),
+        recipient_email=waiting_resident["email"] if waiting_resident else "",
         space_id=space_id,
         visitor_name=entry["visitor_name"],
         visitor_plate=entry["visitor_plate"],
@@ -726,7 +679,7 @@ def get_waitlist_offers(session_id: str) -> dict:
     resident = _SESSIONS.get(session_id, {}).get("resident")
     if resident is None:
         return {"offers": []}
-    entries = _read_csv(WAITLIST_CSV)
+    entries = _repo.get_waitlist_entries()
     offers = [
         {
             "waitlist_id": e["waitlist_id"],
@@ -746,8 +699,7 @@ def get_waitlist_offers(session_id: str) -> dict:
 def accept_waitlist_offer(waitlist_id: str) -> dict:
     """Deterministic UI action (Accept button) — plain function, not a Strands tool.
     Rechecks everything against persisted state before creating a real permit."""
-    entries = _read_csv(WAITLIST_CSV)
-    entry = next((e for e in entries if e["waitlist_id"] == waitlist_id), None)
+    entry = _repo.get_waitlist_entry(waitlist_id)
     if entry is None:
         return {"error": "not_found", "message": f"No waitlist entry found with id {waitlist_id}."}
 
@@ -774,15 +726,11 @@ def accept_waitlist_offer(waitlist_id: str) -> dict:
     if new_permit is None:
         return meta
 
-    entries = _read_csv(WAITLIST_CSV)
-    for e in entries:
-        if e["waitlist_id"] == waitlist_id:
-            e["status"] = "accepted"
-            e["permit_id"] = new_permit["permit_id"]
-    _write_csv(WAITLIST_CSV, entries, WAITLIST_FIELDNAMES)
+    _repo.update_waitlist_entry(waitlist_id, status="accepted", permit_id=new_permit["permit_id"])
 
+    accepting_resident = _lookup_resident_by_id(entry["resident_id"])
     resident_email = send_permit_confirmation_email(
-        recipient_email=os.environ.get("SPOTON_RECIPIENT_EMAIL", ""),
+        recipient_email=accepting_resident["email"] if accepting_resident else "",
         permit_id=new_permit["permit_id"],
         visitor_name=entry["visitor_name"],
         visitor_plate=new_permit["visitor_plate"],
@@ -795,7 +743,7 @@ def accept_waitlist_offer(waitlist_id: str) -> dict:
     admin_email = send_visitor_admin_notification(
         recipient_email=os.environ.get("SPOTON_SECURITY_EMAIL", ""),
         permit_id=new_permit["permit_id"],
-        resident_unit=DEMO_RESIDENT_UNIT,
+        resident_unit=accepting_resident["unit_number"] if accepting_resident else "",
         visitor_name=entry["visitor_name"],
         visitor_plate=new_permit["visitor_plate"],
         space_id=new_permit["space_id"],
@@ -821,8 +769,7 @@ def accept_waitlist_offer(waitlist_id: str) -> dict:
 
 def decline_waitlist_offer(waitlist_id: str) -> dict:
     """Deterministic UI action (Decline button) — plain function, not a Strands tool."""
-    entries = _read_csv(WAITLIST_CSV)
-    entry = next((e for e in entries if e["waitlist_id"] == waitlist_id), None)
+    entry = _repo.get_waitlist_entry(waitlist_id)
     if entry is None:
         return {"error": "not_found", "message": f"No waitlist entry found with id {waitlist_id}."}
 
@@ -836,16 +783,11 @@ def decline_waitlist_offer(waitlist_id: str) -> dict:
         }
 
     space_id = entry["offered_space_id"]
-    for e in entries:
-        if e["waitlist_id"] == waitlist_id:
-            e["status"] = "declined"
-    _write_csv(WAITLIST_CSV, entries, WAITLIST_FIELDNAMES)
+    _repo.update_waitlist_entry(waitlist_id, status="declined")
 
-    spaces = _read_csv(SPACES_CSV)
-    for s in spaces:
-        if s["space_id"] == space_id and s["status"] == "offered":
-            s["status"] = "available"
-    _write_csv(SPACES_CSV, spaces, ["space_id", "space_type", "status", "current_permit_id"])
+    space = _repo.get_space(space_id)
+    if space is not None and space["status"] == "offered":
+        _repo.update_space(space_id, status="available")
 
     return {
         "success": True,

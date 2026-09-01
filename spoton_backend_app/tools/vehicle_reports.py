@@ -7,22 +7,16 @@ It never decides a vehicle is illegal, issues a ticket, or contacts security on 
 own — those are explicit human choices (Mark as Expected / Report to Security).
 """
 
-import csv
 import os
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
 from strands import tool
-from tools.parking_tools import _read_csv, _write_csv, SPACES_CSV, PERMITS_CSV, RESIDENTS_CSV, VEHICLES_CSV
+from repositories import get_repository
 from services.email_service import send_vehicle_review_notification
 
-UNKNOWN_VEHICLE_CSV = Path(__file__).parent.parent.parent / "mock_data" / "unknown_vehicle.csv"
-
-UNKNOWN_VEHICLE_FIELDNAMES = [
-    "report_id", "space_id", "plate", "status", "resident_match", "visitor_permit_match",
-    "temporary_permit_match", "reasoning", "reported_at", "reviewed_at", "review_decision",
-    "security_notified_at",
-]
+# All persistence goes through this — CSV today, pluggable later (see
+# repositories/). Business logic below never touches a CSV path directly.
+_repo = get_repository()
 
 
 def normalize_plate(plate: str) -> str:
@@ -32,15 +26,10 @@ def normalize_plate(plate: str) -> str:
 
 
 def _lookup_resident_vehicle(plate_norm: str) -> dict | None:
-    vehicles = _read_csv(VEHICLES_CSV)
-    vehicle = next(
-        (v for v in vehicles if v["status"] == "active" and normalize_plate(v["plate"]) == plate_norm),
-        None,
-    )
+    vehicle = _repo.get_active_vehicle_by_plate(plate_norm)
     if vehicle is None:
         return None
-    residents = _read_csv(RESIDENTS_CSV)
-    resident = next((r for r in residents if r["resident_id"] == vehicle["resident_id"]), None)
+    resident = _repo.get_resident_by_id(vehicle["resident_id"])
     return {
         "resident_id": vehicle["resident_id"],
         "unit_number": resident["unit_number"] if resident else None,
@@ -53,7 +42,7 @@ def _lookup_active_permit(plate_norm: str, permit_type: str) -> dict | None:
     """A permit only counts as a match if it's upcoming AND its window covers right
     now — an unstarted or already-finished permit doesn't explain a vehicle sitting
     there this moment."""
-    permits = _read_csv(PERMITS_CSV)
+    permits = _repo.get_permits()
     now = datetime.now(timezone.utc)
     for p in permits:
         if p["permit_type"] != permit_type or p["status"] != "upcoming":
@@ -145,19 +134,15 @@ def report_and_check_vehicle(space_id: str, plate: str) -> dict:
         "review_decision": "",
         "security_notified_at": "",
     }
-    reports = _read_csv(UNKNOWN_VEHICLE_CSV)
-    reports.append(row)
-    _write_csv(UNKNOWN_VEHICLE_CSV, reports, UNKNOWN_VEHICLE_FIELDNAMES)
+    _repo.add_vehicle_report(row)
 
     # A human just said a vehicle is physically sitting there — that's true regardless
     # of whether records explain it, so the space stops looking available. If it's
     # already reserved/offered (a legitimate permit already accounts for it), leave
     # that as-is rather than downgrading a more specific state.
-    spaces = _read_csv(SPACES_CSV)
-    for s in spaces:
-        if s["space_id"] == space_id and s["status"] == "available":
-            s["status"] = "unknown"
-    _write_csv(SPACES_CSV, spaces, ["space_id", "space_type", "status", "current_permit_id"])
+    space = _repo.get_space(space_id)
+    if space is not None and space["status"] == "available":
+        _repo.update_space(space_id, status="unknown")
 
     return {
         "report_id": report_id,
@@ -175,15 +160,14 @@ def report_and_check_vehicle(space_id: str, plate: str) -> dict:
 def get_vehicle_reports() -> dict:
     """Plain function for GET /api/admin/vehicle-reports — no LLM involvement in
     reading state."""
-    return {"reports": _read_csv(UNKNOWN_VEHICLE_CSV)}
+    return {"reports": _repo.get_vehicle_reports()}
 
 
 def mark_expected(report_id: str) -> dict:
     """Deterministic UI action (Mark as Expected button) — plain function, not a
     Strands tool. Pure human acknowledgement: does not touch the space, does not
     create a permit or vehicle record, does not notify anyone."""
-    reports = _read_csv(UNKNOWN_VEHICLE_CSV)
-    report = next((r for r in reports if r["report_id"] == report_id), None)
+    report = _repo.get_vehicle_report(report_id)
     if report is None:
         return {"error": "not_found", "message": f"No vehicle report found with id {report_id}."}
 
@@ -197,12 +181,7 @@ def mark_expected(report_id: str) -> dict:
         }
 
     now = datetime.now(timezone.utc).isoformat()
-    for r in reports:
-        if r["report_id"] == report_id:
-            r["status"] = "expected"
-            r["review_decision"] = "expected"
-            r["reviewed_at"] = now
-    _write_csv(UNKNOWN_VEHICLE_CSV, reports, UNKNOWN_VEHICLE_FIELDNAMES)
+    _repo.update_vehicle_report(report_id, status="expected", review_decision="expected", reviewed_at=now)
 
     return {"success": True, "report_id": report_id, "status": "expected", "message": "Marked as expected."}
 
@@ -210,8 +189,7 @@ def mark_expected(report_id: str) -> dict:
 def notify_security(report_id: str) -> dict:
     """Deterministic UI action (Report to Security button) — plain function, not a
     Strands tool. Only runs because a human explicitly chose it."""
-    reports = _read_csv(UNKNOWN_VEHICLE_CSV)
-    report = next((r for r in reports if r["report_id"] == report_id), None)
+    report = _repo.get_vehicle_report(report_id)
     if report is None:
         return {"error": "not_found", "message": f"No vehicle report found with id {report_id}."}
 
@@ -225,13 +203,13 @@ def notify_security(report_id: str) -> dict:
         }
 
     now = datetime.now(timezone.utc).isoformat()
-    for r in reports:
-        if r["report_id"] == report_id:
-            r["status"] = "security_notified"
-            r["review_decision"] = "security_notified"
-            r["reviewed_at"] = now
-            r["security_notified_at"] = now
-    _write_csv(UNKNOWN_VEHICLE_CSV, reports, UNKNOWN_VEHICLE_FIELDNAMES)
+    _repo.update_vehicle_report(
+        report_id,
+        status="security_notified",
+        review_decision="security_notified",
+        reviewed_at=now,
+        security_notified_at=now,
+    )
 
     email_result = send_vehicle_review_notification(
         recipient_email=os.environ.get("SPOTON_SECURITY_EMAIL", ""),
