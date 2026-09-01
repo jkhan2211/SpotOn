@@ -89,6 +89,37 @@ class Repository(ABC):
     def update_waitlist_entry(self, waitlist_id: str, **fields) -> dict | None:
         """Partially update a waitlist entry's fields. No-op if not found."""
 
+    # ── Multi-item atomic operations ────────────────────────────────────────
+    # These exist because their two-or-three-row updates must succeed or fail
+    # together — see the Phase 2/8 migration notes for why each one is a race
+    # risk otherwise. CsvRepository implements them as the same sequential
+    # calls the tools layer used to make directly (CSV has no real concurrent
+    # writers); DynamoDBRepository implements them as a single
+    # TransactWriteItems call guarded by ConditionExpressions.
+    @abstractmethod
+    def reserve_space_and_add_permit(self, space_id: str, required_status: str, permit: dict) -> dict | None:
+        """Atomically move a space from required_status ("available" for a
+        fresh booking, "offered" for a waitlist-offer acceptance) to
+        "reserved" (linked to permit["permit_id"]), and persist the new
+        permit row. Returns the permit dict on success, or None if the space
+        was no longer in required_status (lost a race, or a stale offer)."""
+
+    @abstractmethod
+    def release_permit_and_free_space(self, permit_id: str, space_id: str) -> dict | None:
+        """Atomically move a permit from "upcoming" to "released" and, if the
+        space is still linked to this permit, free it back to "available".
+        Returns the updated permit dict on success, or None if the permit was
+        already not "upcoming" (idempotent no-op — someone else released it
+        first)."""
+
+    @abstractmethod
+    def accept_waitlist_offer_and_add_permit(self, waitlist_id: str, space_id: str, permit: dict) -> dict | None:
+        """Atomically move a waitlist entry from "offered" to "accepted"
+        (recording permit["permit_id"]), move its offered space from
+        "offered" to "reserved", and persist the new permit row. Returns the
+        permit dict on success, or None if the offer was no longer "offered"
+        (lost a race — already accepted or declined elsewhere)."""
+
     # ── Unknown vehicle reports ─────────────────────────────────────────────
     @abstractmethod
     def get_vehicle_reports(self) -> list[dict]:

@@ -4,6 +4,7 @@ import logging
 import boto3
 from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 from botocore.exceptions import BotoCoreError, ClientError
 
@@ -21,19 +22,35 @@ FROM_EMAIL = os.environ.get("SPOTON_SES_FROM_EMAIL", "")
 EMAIL_MODE = os.environ.get("SPOTON_EMAIL_MODE", "live").strip().lower()
 
 
-def _format_date(iso_time: str) -> str:
-    """'2026-09-03T18:00:00Z' -> 'September 3, 2026'. Falls back to the raw value
-    if it doesn't parse, so a display glitch never blocks the email from sending."""
+def _to_local(dt: datetime, tz_name: str | None) -> datetime:
+    """Converts a UTC-aware datetime to tz_name (the resident's browser-reported
+    IANA zone) when given and valid. Falls back to UTC — same as when no
+    timezone is known at all — rather than failing the email over a display
+    detail, e.g. an unrecognized zone name."""
+    if not tz_name:
+        return dt
     try:
-        return datetime.fromisoformat(iso_time.replace("Z", "+00:00")).strftime("%B %-d, %Y")
+        return dt.astimezone(ZoneInfo(tz_name))
+    except Exception:
+        return dt
+
+
+def _format_date(iso_time: str, tz_name: str | None = None) -> str:
+    """'2026-09-03T18:00:00Z' -> 'September 3, 2026' (in tz_name if given, else UTC).
+    Falls back to the raw value if it doesn't parse, so a display glitch never
+    blocks the email from sending."""
+    try:
+        dt = _to_local(datetime.fromisoformat(iso_time.replace("Z", "+00:00")), tz_name)
+        return dt.strftime("%B %-d, %Y")
     except (ValueError, AttributeError):
         return iso_time
 
 
-def _format_time(iso_time: str) -> str:
-    """'2026-09-03T18:00:00Z' -> '6:00 PM'."""
+def _format_time(iso_time: str, tz_name: str | None = None) -> str:
+    """'2026-09-03T18:00:00Z' -> '6:00 PM' (in tz_name if given, else UTC)."""
     try:
-        return datetime.fromisoformat(iso_time.replace("Z", "+00:00")).strftime("%-I:%M %p")
+        dt = _to_local(datetime.fromisoformat(iso_time.replace("Z", "+00:00")), tz_name)
+        return dt.strftime("%-I:%M %p")
     except (ValueError, AttributeError):
         return iso_time
 
@@ -72,9 +89,10 @@ def send_permit_confirmation_email(
     end_time: str,
     available_spaces: int | None = None,
     total_spaces: int | None = None,
+    tz_name: str | None = None,
 ) -> dict:
-    date_str = _format_date(start_time)
-    time_str = f"{_format_time(start_time)} – {_format_time(end_time)}"
+    date_str = _format_date(start_time, tz_name)
+    time_str = f"{_format_time(start_time, tz_name)} – {_format_time(end_time, tz_name)}"
 
     availability_line_text = (
         f"\nAvailable Spaces: {available_spaces} of {total_spaces}\n"
@@ -169,9 +187,10 @@ def send_temp_resident_confirmation_email(
     start_time: str,
     end_time: str,
     reason: str,
+    tz_name: str | None = None,
 ) -> dict:
-    date_str = _format_date(start_time)
-    time_str = f"{_format_time(start_time)} – {_format_time(end_time)}"
+    date_str = _format_date(start_time, tz_name)
+    time_str = f"{_format_time(start_time, tz_name)} – {_format_time(end_time, tz_name)}"
 
     plain = f"""SpotOn Agent — Temporary Resident Parking Confirmation
 
@@ -255,9 +274,10 @@ def send_temp_resident_admin_notification(
     start_time: str,
     end_time: str,
     reason: str,
+    tz_name: str | None = None,
 ) -> dict:
-    date_str = _format_date(start_time)
-    time_str = f"{_format_time(start_time)} – {_format_time(end_time)}"
+    date_str = _format_date(start_time, tz_name)
+    time_str = f"{_format_time(start_time, tz_name)} – {_format_time(end_time, tz_name)}"
 
     plain = f"""SpotOn Agent — Temporary Resident Parking Notification
 
@@ -332,9 +352,10 @@ def send_visitor_admin_notification(
     space_id: str,
     start_time: str,
     end_time: str,
+    tz_name: str | None = None,
 ) -> dict:
-    date_str = _format_date(start_time)
-    time_str = f"{_format_time(start_time)} – {_format_time(end_time)}"
+    date_str = _format_date(start_time, tz_name)
+    time_str = f"{_format_time(start_time, tz_name)} – {_format_time(end_time, tz_name)}"
 
     plain = f"""SpotOn Agent — Visitor Parking Notification
 
@@ -408,9 +429,10 @@ def send_release_confirmation_email(
     occupant_name: str,
     start_time: str,
     end_time: str,
+    tz_name: str | None = None,
 ) -> dict:
-    date_str = _format_date(start_time)
-    time_str = f"{_format_time(start_time)} – {_format_time(end_time)}"
+    date_str = _format_date(start_time, tz_name)
+    time_str = f"{_format_time(start_time, tz_name)} – {_format_time(end_time, tz_name)}"
 
     plain = f"""SpotOn Agent — Parking Space Released
 
@@ -546,9 +568,10 @@ def send_waitlist_offer_email(
     visitor_plate: str,
     start_time: str,
     end_time: str,
+    tz_name: str | None = None,
 ) -> dict:
-    date_str = _format_date(start_time)
-    time_str = f"{_format_time(start_time)} – {_format_time(end_time)}"
+    date_str = _format_date(start_time, tz_name)
+    time_str = f"{_format_time(start_time, tz_name)} – {_format_time(end_time, tz_name)}"
 
     plain = f"""SpotOn Agent — A Parking Space Is Available
 

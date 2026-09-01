@@ -142,6 +142,41 @@ class CsvRepository(Repository):
     def update_waitlist_entry(self, waitlist_id: str, **fields) -> dict | None:
         return _update_by_id(WAITLIST_CSV, WAITLIST_FIELDNAMES, "waitlist_id", waitlist_id, fields)
 
+    # ── Multi-item atomic operations ────────────────────────────────────────
+    # CSV has no real concurrent writers, so these are just the same
+    # sequential calls the tools layer used to make directly — same
+    # behaviour, now expressed at the repository boundary so both backends
+    # share one call site.
+    def reserve_space_and_add_permit(self, space_id: str, required_status: str, permit: dict) -> dict | None:
+        space = self.get_space(space_id)
+        if space is None or space["status"] != required_status:
+            return None
+        self.update_space(space_id, status="reserved", current_permit_id=permit["permit_id"])
+        self.add_permit(permit)
+        return permit
+
+    def release_permit_and_free_space(self, permit_id: str, space_id: str) -> dict | None:
+        permit = self.get_permit(permit_id)
+        if permit is None or permit["status"] != "upcoming":
+            return None
+        updated = self.update_permit(permit_id, status="released")
+        space = self.get_space(space_id)
+        if space is not None and space["current_permit_id"] == permit_id:
+            self.update_space(space_id, status="available", current_permit_id="")
+        return updated
+
+    def accept_waitlist_offer_and_add_permit(self, waitlist_id: str, space_id: str, permit: dict) -> dict | None:
+        entry = self.get_waitlist_entry(waitlist_id)
+        if entry is None or entry["status"] != "offered":
+            return None
+        space = self.get_space(space_id)
+        if space is None or space["status"] != "offered":
+            return None
+        self.update_waitlist_entry(waitlist_id, status="accepted", permit_id=permit["permit_id"])
+        self.update_space(space_id, status="reserved", current_permit_id=permit["permit_id"])
+        self.add_permit(permit)
+        return permit
+
     # ── Unknown vehicle reports ──────────────────────────────────────────────
     def get_vehicle_reports(self) -> list[dict]:
         return _read_csv(UNKNOWN_VEHICLE_CSV)

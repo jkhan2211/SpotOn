@@ -1,15 +1,15 @@
 """Returns the Repository implementation selected by SPOTON_DATA_BACKEND.
 
-Today only "csv" (the default) is implemented. Any other value fails loudly
-and immediately rather than silently falling back to CSV — a future
-DynamoDBRepository plugs in here as a second branch, with no changes needed
-anywhere else in the app.
+"csv" (the default) and "dynamodb" are both implemented and behave
+identically from every caller's perspective — see repositories/csv_repository.py
+and repositories/dynamodb_repository.py.
 """
 
 import os
 
 from repositories.base_repository import Repository
 from repositories.csv_repository import CsvRepository
+from repositories.dynamodb_repository import DynamoDBRepository
 
 _repository: Repository | None = None
 
@@ -30,13 +30,8 @@ def _build_repository() -> Repository:
         return CsvRepository()
 
     if backend == "dynamodb":
-        raise NotImplementedError(
-            "SPOTON_DATA_BACKEND=dynamodb is not implemented yet. "
-            "DynamoDBRepository does not exist in this codebase — only 'csv' "
-            "is currently supported. See the DynamoDB readiness report for "
-            "what a future DynamoDBRepository needs to implement."
-        )
+        return DynamoDBRepository()
 
     raise ValueError(
-        f"Unsupported SPOTON_DATA_BACKEND={backend!r}. Supported values: 'csv'."
+        f"Unsupported SPOTON_DATA_BACKEND={backend!r}. Supported values: 'csv', 'dynamodb'."
     )

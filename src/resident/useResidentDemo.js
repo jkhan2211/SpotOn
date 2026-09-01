@@ -103,7 +103,7 @@ export function useResidentDemo() {
     const permitId = space?.current_permit_id || activePermits[spaceId]?.permitId;
     if (!permitId || isReleasing) return;
     setIsReleasing(true);
-    fetch(`http://localhost:8000/api/permits/${permitId}/release`, { method: 'POST' })
+    fetch(`http://localhost:8000/api/permits/${permitId}/release?timezone=${encodeURIComponent(timezone)}`, { method: 'POST' })
       .then(res => res.json().then(data => ({ ok: res.ok, data })))
       .then(({ ok, data }) => {
         setIsReleasing(false);
@@ -132,7 +132,7 @@ export function useResidentDemo() {
   const acceptOffer = useCallback((waitlistId) => {
     if (offerActionId) return;
     setOfferActionId(waitlistId);
-    fetch(`http://localhost:8000/api/waitlist/${waitlistId}/accept`, { method: 'POST' })
+    fetch(`http://localhost:8000/api/waitlist/${waitlistId}/accept?timezone=${encodeURIComponent(timezone)}`, { method: 'POST' })
       .then(res => res.json().then(data => ({ ok: res.ok, data })))
       .then(({ ok, data }) => {
         setOfferActionId(null);

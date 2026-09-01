@@ -50,16 +50,27 @@ _SESSIONS: dict[str, dict] = {}
 _current_session_id: str | None = None
 
 
-def set_current_session(session_id: str) -> None:
+def set_current_session(session_id: str, tz_name: str | None = None) -> None:
     global _current_session_id
     _current_session_id = session_id
-    _SESSIONS.setdefault(session_id, {"resident": None})
+    session = _SESSIONS.setdefault(session_id, {"resident": None, "timezone": None})
+    if tz_name:
+        session["timezone"] = tz_name
 
 
 def get_current_resident() -> dict | None:
     if _current_session_id is None:
         return None
     return _SESSIONS.get(_current_session_id, {}).get("resident")
+
+
+def get_current_timezone() -> str | None:
+    """The current session's browser-reported IANA timezone (e.g.
+    "America/Toronto"), set on each /api/chat call — used so booking
+    confirmation emails show times the resident actually asked for, not UTC."""
+    if _current_session_id is None:
+        return None
+    return _SESSIONS.get(_current_session_id, {}).get("timezone")
 
 
 def _set_current_resident(resident: dict | None) -> None:
@@ -149,44 +160,61 @@ def _assign_space_and_create_permit(
     If require_space_id is given (waitlist-offer acceptance), target that exact space
     instead of auto-picking — it must currently be "offered", not just "available",
     since an offered space is deliberately held out of the normal available pool.
+
+    The reserve+create-permit step goes through the repository's
+    reserve_space_and_add_permit(), which persists both atomically and reports back
+    if the space's status had already moved out from under us (a concurrent booking
+    won the race). In the auto-pick case, on that outcome we simply try the next
+    still-available candidate from this same read — same "first available" result
+    in the normal case, just resilient to a lost race instead of silently
+    double-booking.
     """
     if _is_past(end_time):
         return None, {"error": f"The requested end time {end_time} has already passed."}
 
     spaces = _repo.get_spaces()
     if require_space_id is not None:
-        space = next((r for r in spaces if r["space_id"] == require_space_id), None)
-        if space is None or space["status"] != "offered":
-            return None, {"error": f"Space {require_space_id} is no longer held for this offer."}
+        candidates = [require_space_id]
+        required_status = "offered"
+        not_available_error = f"Space {require_space_id} is no longer held for this offer."
     else:
-        available = [r for r in spaces if r["status"] == "available"]
-        if not available:
-            return None, {"error": "No parking spaces are currently available."}
-        space = available[0]
+        candidates = [r["space_id"] for r in spaces if r["status"] == "available"]
+        required_status = "available"
+        not_available_error = "No parking spaces are currently available."
+
+    if not candidates:
+        return None, {"error": not_available_error}
+
     permit_id = f"SP-{uuid.uuid4().hex[:6].upper()}"
     now = datetime.now(timezone.utc).isoformat()
 
-    _repo.update_space(space["space_id"], status="reserved", current_permit_id=permit_id)
-    # Reflect the just-made update locally so remaining_available_spaces below is
-    # accurate without a second read from the repository.
-    space["status"] = "reserved"
+    def _permit_for(space_id: str) -> dict:
+        return {
+            "permit_id": permit_id,
+            "resident_id": resident_id,
+            "visitor_name": occupant_name,
+            "visitor_plate": plate.upper(),
+            "space_id": space_id,
+            "start_time": start_time,
+            "end_time": end_time,
+            "status": "upcoming",
+            "permit_type": permit_type,
+            "reason": reason,
+            "created_at": now,
+        }
 
-    new_permit = {
-        "permit_id": permit_id,
-        "resident_id": resident_id,
-        "visitor_name": occupant_name,
-        "visitor_plate": plate.upper(),
-        "space_id": space["space_id"],
-        "start_time": start_time,
-        "end_time": end_time,
-        "status": "upcoming",
-        "permit_type": permit_type,
-        "reason": reason,
-        "created_at": now,
-    }
-    _repo.add_permit(new_permit)
+    new_permit = None
+    reserved_space_id = None
+    for space_id in candidates:
+        new_permit = _repo.reserve_space_and_add_permit(space_id, required_status, _permit_for(space_id))
+        if new_permit is not None:
+            reserved_space_id = space_id
+            break
 
-    remaining = [r["space_id"] for r in spaces if r["status"] == "available"]
+    if new_permit is None:
+        return None, {"error": not_available_error}
+
+    remaining = [r["space_id"] for r in spaces if r["status"] == "available" and r["space_id"] != reserved_space_id]
     return new_permit, {"remaining_available_spaces": remaining, "total_spaces": len(spaces)}
 
 
@@ -308,6 +336,7 @@ def create_permit(visitor_name: str, visitor_plate: str, start_time: str, end_ti
         end_time=end_time,
         available_spaces=len(meta["remaining_available_spaces"]),
         total_spaces=meta["total_spaces"],
+        tz_name=get_current_timezone(),
     )
     admin_email = send_visitor_admin_notification(
         recipient_email=os.environ.get("SPOTON_SECURITY_EMAIL", ""),
@@ -318,6 +347,7 @@ def create_permit(visitor_name: str, visitor_plate: str, start_time: str, end_ti
         space_id=new_permit["space_id"],
         start_time=start_time,
         end_time=end_time,
+        tz_name=get_current_timezone(),
     )
     result["resident_email"] = resident["email"]
 
@@ -424,6 +454,7 @@ def create_temporary_resident_permit(vehicle_plate: str, start_time: str, end_ti
         start_time=start_time,
         end_time=end_time,
         reason=reason,
+        tz_name=get_current_timezone(),
     )
     admin_email = send_temp_resident_admin_notification(
         recipient_email=os.environ.get("SPOTON_SECURITY_EMAIL", ""),
@@ -434,6 +465,7 @@ def create_temporary_resident_permit(vehicle_plate: str, start_time: str, end_ti
         start_time=start_time,
         end_time=end_time,
         reason=reason,
+        tz_name=get_current_timezone(),
     )
 
     result["resident_email_sent"] = resident_email.get("success", False)
@@ -447,11 +479,15 @@ def create_temporary_resident_permit(vehicle_plate: str, start_time: str, end_ti
 
 # Deterministic UI action (release/cancel button) — plain function, not a Strands
 # @tool, since the agent doesn't need to be involved in this flow.
-def release_permit(permit_id: str) -> dict:
+def release_permit(permit_id: str, tz_name: str | None = None) -> dict:
     """
     Release/cancel a permit by id and free its assigned parking space. Works for both
     permit_type = visitor and permit_type = temporary_resident. Idempotent: calling it
     again on an already-released permit is a safe no-op, not a second free.
+
+    tz_name (the releasing resident's browser-reported IANA timezone) is used only
+    to display the original booking's date/time in the confirmation email; it plays
+    no role in the release logic itself.
     """
     permit = _repo.get_permit(permit_id)
     if permit is None:
@@ -467,12 +503,22 @@ def release_permit(permit_id: str) -> dict:
             "message": f"Permit {permit_id} was already {permit['status']}.",
         }
 
-    _repo.update_permit(permit_id, status="released")
-
     space_id = permit["space_id"]
-    space = _repo.get_space(space_id)
-    if space is not None and space["current_permit_id"] == permit_id:
-        _repo.update_space(space_id, status="available", current_permit_id="")
+    # Atomic: permit upcoming->released and space (if still linked to this permit)
+    # reserved->available happen together, or not at all — closes the race the
+    # status check above can't, since another request could release the same
+    # permit between that check and this write.
+    released = _repo.release_permit_and_free_space(permit_id, space_id)
+    if released is None:
+        current = _repo.get_permit(permit_id) or permit
+        return {
+            "success": True,
+            "already_released": True,
+            "permit_id": permit_id,
+            "space_id": current["space_id"],
+            "permit_status": current["status"],
+            "message": f"Permit {permit_id} was already {current['status']}.",
+        }
 
     result = {
         "success": True,
@@ -504,6 +550,7 @@ def release_permit(permit_id: str) -> dict:
         occupant_name=occupant_name,
         start_time=permit["start_time"],
         end_time=permit["end_time"],
+        tz_name=tz_name,
     )
     admin_email = send_release_admin_notification(
         recipient_email=os.environ.get("SPOTON_SECURITY_EMAIL", ""),
@@ -696,9 +743,14 @@ def get_waitlist_offers(session_id: str) -> dict:
     return {"offers": offers}
 
 
-def accept_waitlist_offer(waitlist_id: str) -> dict:
+def accept_waitlist_offer(waitlist_id: str, tz_name: str | None = None) -> dict:
     """Deterministic UI action (Accept button) — plain function, not a Strands tool.
-    Rechecks everything against persisted state before creating a real permit."""
+    Rechecks everything against persisted state before creating a real permit.
+
+    tz_name (the accepting resident's browser-reported IANA timezone) is used only
+    to display the booking's date/time in the confirmation emails; it plays no role
+    in the acceptance logic itself.
+    """
     entry = _repo.get_waitlist_entry(waitlist_id)
     if entry is None:
         return {"error": "not_found", "message": f"No waitlist entry found with id {waitlist_id}."}
@@ -712,21 +764,46 @@ def accept_waitlist_offer(waitlist_id: str) -> dict:
             "message": f"Waitlist entry {waitlist_id} is already {entry['status']}.",
         }
 
-    space_id = entry["offered_space_id"]
-    new_permit, meta = _assign_space_and_create_permit(
-        resident_id=entry["resident_id"],
-        occupant_name=entry["visitor_name"],
-        plate=entry["visitor_plate"],
-        start_time=entry["start_time"],
-        end_time=entry["end_time"],
-        permit_type=entry["request_type"],
-        reason="",
-        require_space_id=space_id,
-    )
-    if new_permit is None:
-        return meta
+    if _is_past(entry["end_time"]):
+        return {"error": f"The requested end time {entry['end_time']} has already passed."}
 
-    _repo.update_waitlist_entry(waitlist_id, status="accepted", permit_id=new_permit["permit_id"])
+    space_id = entry["offered_space_id"]
+    permit_id = f"SP-{uuid.uuid4().hex[:6].upper()}"
+    now = datetime.now(timezone.utc).isoformat()
+    new_permit = {
+        "permit_id": permit_id,
+        "resident_id": entry["resident_id"],
+        "visitor_name": entry["visitor_name"],
+        "visitor_plate": entry["visitor_plate"].upper(),
+        "space_id": space_id,
+        "start_time": entry["start_time"],
+        "end_time": entry["end_time"],
+        "status": "upcoming",
+        "permit_type": entry["request_type"],
+        "reason": "",
+        "created_at": now,
+    }
+
+    # Atomic: waitlist offered->accepted, space offered->reserved, and the new
+    # permit row all happen together, or not at all — a plain sequential version
+    # (update waitlist, then separately reserve the space) could leave the waitlist
+    # entry "accepted" with no permit ever created if a later step failed.
+    accepted_permit = _repo.accept_waitlist_offer_and_add_permit(waitlist_id, space_id, new_permit)
+    if accepted_permit is None:
+        current = _repo.get_waitlist_entry(waitlist_id) or entry
+        return {
+            "success": True,
+            "already_finalized": True,
+            "waitlist_id": waitlist_id,
+            "status": current["status"],
+            "message": f"Waitlist entry {waitlist_id} is already {current['status']}.",
+        }
+
+    spaces = _repo.get_spaces()
+    meta = {
+        "remaining_available_spaces": [r["space_id"] for r in spaces if r["status"] == "available"],
+        "total_spaces": len(spaces),
+    }
 
     accepting_resident = _lookup_resident_by_id(entry["resident_id"])
     resident_email = send_permit_confirmation_email(
@@ -739,6 +816,7 @@ def accept_waitlist_offer(waitlist_id: str) -> dict:
         end_time=entry["end_time"],
         available_spaces=len(meta["remaining_available_spaces"]),
         total_spaces=meta["total_spaces"],
+        tz_name=tz_name,
     )
     admin_email = send_visitor_admin_notification(
         recipient_email=os.environ.get("SPOTON_SECURITY_EMAIL", ""),
@@ -749,6 +827,7 @@ def accept_waitlist_offer(waitlist_id: str) -> dict:
         space_id=new_permit["space_id"],
         start_time=entry["start_time"],
         end_time=entry["end_time"],
+        tz_name=tz_name,
     )
 
     return {

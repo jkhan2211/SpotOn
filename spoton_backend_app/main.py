@@ -77,7 +77,7 @@ def parking_spaces():
 @app.post("/api/chat")
 def chat(req: ChatRequest):
     last_created_permit.clear()
-    set_current_session(req.session_id)
+    set_current_session(req.session_id, req.timezone)
     agent = agent_module.get_agent_for_session(req.session_id, req.timezone)
     response = agent(req.message)
     return {
@@ -95,8 +95,8 @@ def reset_chat():
 
 
 @app.post("/api/permits/{permit_id}/release")
-def release(permit_id: str):
-    result = release_permit(permit_id)
+def release(permit_id: str, timezone: str | None = None):
+    result = release_permit(permit_id, tz_name=timezone)
     if result.get("error") == "not_found":
         raise HTTPException(status_code=404, detail=result["message"])
     return result
@@ -108,8 +108,8 @@ def waitlist_offers(session_id: str = "default"):
 
 
 @app.post("/api/waitlist/{waitlist_id}/accept")
-def waitlist_accept(waitlist_id: str):
-    result = accept_waitlist_offer(waitlist_id)
+def waitlist_accept(waitlist_id: str, timezone: str | None = None):
+    result = accept_waitlist_offer(waitlist_id, tz_name=timezone)
     if result.get("error") == "not_found":
         raise HTTPException(status_code=404, detail=result["message"])
     if "error" in result:
