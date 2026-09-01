@@ -1,0 +1,89 @@
+.offer-banner {
+  padding: 0.6rem 1.5rem 0;
+  max-width: 1400px;
+  margin: 0 auto;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.offer-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  border-left: 4px solid #f59e0b;
+  border-radius: 8px;
+  padding: 0.55rem 0.85rem;
+  font-size: 0.85rem;
+  color: #7c4a03;
+}
+
+.offer-row__icon {
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.offer-row__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.offer-row__body strong {
+  color: #92400e;
+}
+
+.offer-row__actions {
+  display: flex;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+.offer-row__btn {
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 0.3rem 0.7rem;
+  border-radius: 6px;
+  border: 1.5px solid transparent;
+  transition: background-color 0.15s, border-color 0.15s;
+}
+
+.offer-row__btn--accept {
+  background: #b45309;
+  color: #ffffff;
+  border-color: #b45309;
+}
+
+.offer-row__btn--accept:hover:not(:disabled) {
+  background: #92400e;
+  border-color: #92400e;
+}
+
+.offer-row__btn--decline {
+  background: transparent;
+  color: #92400e;
+  border-color: rgba(245, 158, 11, 0.6);
+}
+
+.offer-row__btn--decline:hover:not(:disabled) {
+  background: rgba(245, 158, 11, 0.18);
+}
+
+.offer-row__btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+@media (max-width: 640px) {
+  .offer-row {
+    flex-wrap: wrap;
+  }
+
+  .offer-row__actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}

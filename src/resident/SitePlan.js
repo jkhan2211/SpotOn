@@ -2,10 +2,37 @@ import { useState } from 'react';
 import { STATUS } from './residentData';
 import './SitePlan.css';
 
+const formatTime = (iso) => {
+  try {
+    return new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  } catch {
+    return iso;
+  }
+};
+
+// Space objects carry their own permit from the backend now (see /api/parking-spaces) —
+// that's the reliable source. activePermits (locally-tracked, keyed by space id) only
+// still matters for the deferred, fully-scripted temp-parking demo path, which never
+// touches the real backend and so has no CSV-backed permit to report.
+const normalizePermit = (p) => {
+  if (!p) return null;
+  if (p.permit_id !== undefined) {
+    return {
+      visitor: p.visitor_name,
+      plate: p.visitor_plate,
+      permitId: p.permit_id,
+      from: formatTime(p.start_time),
+      until: formatTime(p.end_time),
+    };
+  }
+  return p;
+};
+
 const STATUS_META = {
   [STATUS.AVAILABLE]: { label: 'Available',     icon: '✓', mod: 'available' },
   [STATUS.RESERVED]:  { label: 'Reserved',      icon: '●', mod: 'reserved'  },
   [STATUS.ACTIVE]:    { label: 'Occupied',       icon: '●', mod: 'active'    },
+  [STATUS.OFFERED]:   { label: 'Offered',        icon: '⏳', mod: 'offered'  },
   [STATUS.UNKNOWN]:   { label: 'Not in Service', icon: '✕', mod: 'unknown'  },
 };
 
@@ -118,10 +145,10 @@ function LandscapeEdge({ label, trees = 4 }) {
 }
 
 // ─── Space popover ────────────────────────────────────────────────────────────
-function SpacePopover({ space, activePermit, onRelease, onClose }) {
+function SpacePopover({ space, activePermit, onRelease, isReleasing, onClose }) {
   if (!space) return null;
   const meta = STATUS_META[space.status];
-  const isOwnPermit = activePermit && activePermit.space === space.id;
+  const permit = normalizePermit(space.permit) ?? activePermit;
   return (
     <div className="space-popover" role="dialog" aria-label={`Details for ${space.id}`}>
       <div className="space-popover__header">
@@ -131,19 +158,21 @@ function SpacePopover({ space, activePermit, onRelease, onClose }) {
       <span className={`space-popover__badge space-popover__badge--${space.status}`}>
         {meta.icon} {meta.label}
       </span>
-      {isOwnPermit ? (
+      {permit ? (
         <>
           <dl className="space-popover__dl">
-            <dt>Visitor</dt><dd>{activePermit.visitor}</dd>
-            <dt>Plate</dt>  <dd>{activePermit.plate}</dd>
-            <dt>Permit</dt> <dd>{activePermit.permitId}</dd>
-            <dt>From</dt>   <dd>{activePermit.from}</dd>
-            <dt>Until</dt>  <dd>{activePermit.until}</dd>
+            <dt>Visitor</dt><dd>{permit.visitor}</dd>
+            <dt>Plate</dt>  <dd>{permit.plate}</dd>
+            <dt>Permit</dt> <dd>{permit.permitId}</dd>
+            <dt>From</dt>   <dd>{permit.from}</dd>
+            <dt>Until</dt>  <dd>{permit.until}</dd>
           </dl>
-          <button className="space-popover__release" onClick={() => { onRelease(); onClose(); }}>
-            🔓 Release Early
+          <button className="space-popover__release" onClick={onRelease} disabled={isReleasing}>
+            {isReleasing ? 'Releasing…' : '🔓 Release Early'}
           </button>
         </>
+      ) : space.status === STATUS.OFFERED ? (
+        <p className="space-popover__note">This space is being held for a waitlisted resident.</p>
       ) : space.status !== STATUS.AVAILABLE ? (
         <p className="space-popover__note">Space details are private.</p>
       ) : (
@@ -190,9 +219,11 @@ function CapacityBar({ spaces }) {
 }
 
 // ─── Main SitePlan ────────────────────────────────────────────────────────────
-export default function SitePlan({ spaces, selectedSpace, onSelectSpace, activePermit, onRelease }) {
+export default function SitePlan({ spaces, selectedSpace, onSelectSpace, activePermits, onRelease, isReleasing }) {
   const [localSelected, setLocalSelected] = useState(null);
-  const active = selectedSpace ?? localSelected;
+  const activeId = (selectedSpace ?? localSelected)?.id;
+  const active = spaces.find(s => s.id === activeId) ?? null;
+  const activePermit = active ? (activePermits[active.id] ?? null) : null;
 
   const handleSelect = (space) => {
     setLocalSelected(space);
@@ -322,7 +353,8 @@ export default function SitePlan({ spaces, selectedSpace, onSelectSpace, activeP
         <SpacePopover
           space={active}
           activePermit={activePermit}
-          onRelease={onRelease}
+          onRelease={() => onRelease(active.id)}
+          isReleasing={isReleasing}
           onClose={() => handleSelect(null)}
         />
       )}

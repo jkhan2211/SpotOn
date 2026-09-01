@@ -1,7 +1,11 @@
-// ─── Mock resident identity ───────────────────────────────────────────────────
-export const CURRENT_RESIDENT = {
-  unit: '14',
-  name: 'Jordan',
+// ─── Resident identity ─────────────────────────────────────────────────────────
+// For the hackathon prototype, resident identity is resolved from a unit number
+// the resident gives SpotOn in chat (see identify_resident() on the backend) —
+// this is NOT authentication, just a lightweight identity/personalization layer.
+// This placeholder is only what's shown before that resolves for the session.
+export const UNRESOLVED_RESIDENT = {
+  unit: null,
+  name: null,
 };
 
 // ─── Parking space statuses ───────────────────────────────────────────────────
@@ -9,6 +13,7 @@ export const STATUS = {
   AVAILABLE: 'available',
   RESERVED: 'reserved',
   ACTIVE: 'active',
+  OFFERED: 'offered',  // held for a waitlisted resident who hasn't accepted yet
   UNKNOWN: 'unknown',  // space occupied by unrecognized vehicle — shown as not in service
 };
 
@@ -56,7 +61,7 @@ export const INITIAL_MESSAGES = [
   {
     id: 1,
     role: 'agent',
-    text: "Hi Jordan! I'm SpotOn, your community parking coordinator. I manage visitor permits, waitlists, and space availability for Maple Grove Townhomes. How can I help you today?",
+    text: "Hi! I'm your SpotOn Agent for Maple Grove Townhomes. 🅿️\n\nBefore we get started, what unit are you in?",
     ts: '2:01 PM',
   },
 ];

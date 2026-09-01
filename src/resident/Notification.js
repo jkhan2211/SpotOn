@@ -5,6 +5,7 @@ const TYPE_META = {
   info:     { icon: 'ℹ', label: 'Info'        },
   released: { icon: '↩', label: 'Released'    },
   reminder: { icon: '🔔', label: 'Reminder'   },
+  error:    { icon: '⚠', label: 'Error'       },
 };
 
 function Toast({ notif, onDismiss }) {

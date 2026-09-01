@@ -1,14 +1,13 @@
 import { useAdminDemo } from './useAdminDemo';
 import AdminSitePlan from './AdminSitePlan';
 import AdminAgentPanel from './AdminAgentPanel';
-import { VehicleReviewQueue } from './AdminReview';
 import NotificationStack from '../resident/Notification';
 import './AdminDashboard.css';
 
 export default function AdminDashboard() {
   const demo = useAdminDemo();
 
-  const pendingReview = demo.vehicleQueue.filter(v => v.status === 'pending').length;
+  const pendingReview = demo.vehicleReports.filter(r => r.status === 'requires_review').length;
 
   return (
     <div className="admin-dashboard">
@@ -43,13 +42,16 @@ export default function AdminDashboard() {
             spaces={demo.spaces}
             selectedSpace={demo.selectedSpace}
             onSelectSpace={(s) => demo.setSelectedSpace(prev => prev?.id === s?.id ? null : s)}
+            vehicleReports={demo.vehicleReports}
             waitlistCount={demo.waitlist.length}
             reviewCount={pendingReview}
+            onMarkExpected={demo.markExpected}
+            onReportToSecurity={demo.reportToSecurity}
+            reportActionId={demo.reportActionId}
           />
         </main>
 
         <aside className="rp-right" aria-label="SpotOn admin agent">
-          <VehicleReviewQueue vehicles={demo.vehicleQueue} onResolve={demo.resolveVehicle} />
           <AdminAgentPanel
             messages={demo.messages}
             isTyping={demo.isTyping}

@@ -1,6 +1,18 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { INITIAL_SPACES, INITIAL_MESSAGES, STATUS, SCENARIO } from './residentData';
 
+// One id per browser tab/session — not real auth, just how the backend knows which
+// resident-context + conversation belongs to this tab. Persists across reloads of the
+// same tab (sessionStorage); clearing it (see switchUnit()) starts a fresh identity.
+const SESSION_ID_KEY = 'spoton_session_id';
+const sessionId = sessionStorage.getItem(SESSION_ID_KEY) || crypto.randomUUID();
+sessionStorage.setItem(SESSION_ID_KEY, sessionId);
+
+// Browser-reported IANA timezone (e.g. "America/Toronto") — residents state times in
+// their own local clock ("7 PM"), so the backend needs to know which "7 PM" that is
+// to convert it to UTC correctly instead of assuming the server's UTC clock.
+const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+
 let msgId = 10;
 const nextId = () => ++msgId;
 const now = () => {
@@ -19,11 +31,18 @@ export function useResidentDemo() {
   const [spaces, setSpaces] = useState(INITIAL_SPACES);
   const [messages, setMessages]       = useState(INITIAL_MESSAGES);
   const [scenario, setScenario]       = useState(SCENARIO.IDLE);
-  const [activePermit, setActivePermit] = useState(null);
+  // Keyed by space id — a resident can have more than one active permit at once
+  // (e.g. a visitor booking and a temporary-resident booking in different spaces).
+  const [activePermits, setActivePermits] = useState({});
+  const soleActivePermit = Object.keys(activePermits).length === 1 ? Object.values(activePermits)[0] : null;
   const [waitlistItem, setWaitlistItem] = useState(null);
   const [notifications, setNotifications] = useState([]);
   const [selectedSpace, setSelectedSpace] = useState(null);
   const [isTyping, setIsTyping]       = useState(false);
+  const [isReleasing, setIsReleasing] = useState(false);
+  const [offers, setOffers] = useState([]);
+  const [offerActionId, setOfferActionId] = useState(null);
+  const [residentContext, setResidentContext] = useState(null);
   const pendingVisitor = useRef('');
   const notifId = useRef(0);
 
@@ -35,7 +54,22 @@ export function useResidentDemo() {
       .catch(err => console.error('Failed to fetch parking spaces:', err));
   }, []);
 
-  useEffect(() => { fetchSpaces(); }, [fetchSpaces]);
+  // ── fetch active waitlist offers — no push/polling infra, so this runs at the same
+  // natural sync points as fetchSpaces (mount, after chat, after release/accept/decline) ──
+  const fetchOffers = useCallback(() => {
+    fetch(`http://localhost:8000/api/waitlist/offers?session_id=${encodeURIComponent(sessionId)}`)
+      .then(res => res.json())
+      .then(data => setOffers(data.offers || []))
+      .catch(err => console.error('Failed to fetch waitlist offers:', err));
+  }, []);
+
+  // ── switch unit — start a fresh resident identity for this tab ─────────────
+  const switchUnit = useCallback(() => {
+    sessionStorage.removeItem(SESSION_ID_KEY);
+    window.location.reload();
+  }, []);
+
+  useEffect(() => { fetchSpaces(); fetchOffers(); }, [fetchSpaces, fetchOffers]);
 
   // ── helpers ──────────────────────────────────────────────────────────────────
   const addMsg = useCallback((role, text, extra = {}) => {
@@ -60,6 +94,95 @@ export function useResidentDemo() {
     setSpaces(prev => prev.map(s => s.id === spaceId ? { ...s, ...patch } : s));
   }, []);
 
+  // ── release/cancel an active permit — real backend call ─────────────────────
+  const releasePermit = useCallback((spaceId) => {
+    // Prefer the backend's own record of what's parked here (works even if this
+    // browser session didn't create the permit itself); fall back to the locally
+    // tracked map for the deferred, fully-scripted temp-parking demo path.
+    const space = spaces.find(s => s.id === spaceId);
+    const permitId = space?.current_permit_id || activePermits[spaceId]?.permitId;
+    if (!permitId || isReleasing) return;
+    setIsReleasing(true);
+    fetch(`http://localhost:8000/api/permits/${permitId}/release`, { method: 'POST' })
+      .then(res => res.json().then(data => ({ ok: res.ok, data })))
+      .then(({ ok, data }) => {
+        setIsReleasing(false);
+        if (!ok) {
+          pushNotif('error', 'Release failed', data.detail || 'Could not release the space. Please try again.');
+          return;
+        }
+        addMsg('agent', data.message);
+        pushNotif('released', `${data.space_id} has been released`, `Permit ${data.permit_id} is now ${data.permit_status}`);
+        setActivePermits(prev => {
+          const next = { ...prev };
+          delete next[spaceId];
+          return next;
+        });
+        if (Object.keys(activePermits).length <= 1) setScenario(SCENARIO.IDLE);
+        fetchSpaces();
+        fetchOffers();
+      })
+      .catch(() => {
+        setIsReleasing(false);
+        pushNotif('error', 'Release failed', "Sorry, I couldn't reach the SpotOn server. Please try again.");
+      });
+  }, [spaces, activePermits, isReleasing, addMsg, pushNotif, fetchSpaces, fetchOffers]);
+
+  // ── accept/decline a waitlist offer — real backend calls, deterministic (no agent) ──
+  const acceptOffer = useCallback((waitlistId) => {
+    if (offerActionId) return;
+    setOfferActionId(waitlistId);
+    fetch(`http://localhost:8000/api/waitlist/${waitlistId}/accept`, { method: 'POST' })
+      .then(res => res.json().then(data => ({ ok: res.ok, data })))
+      .then(({ ok, data }) => {
+        setOfferActionId(null);
+        if (!ok) {
+          pushNotif('error', 'Accept failed', data.detail || 'Could not accept the offer. Please try again.');
+          return;
+        }
+        addMsg('agent', data.message);
+        const permit = {
+          visitor: data.visitor_name,
+          plate: data.visitor_plate,
+          space: data.space_id,
+          from: formatTime(data.start_time),
+          until: formatTime(data.end_time),
+          status: 'Upcoming',
+          permitId: data.permit_id,
+        };
+        setActivePermits(prev => ({ ...prev, [permit.space]: permit }));
+        setScenario(SCENARIO.BOOKING_CONFIRMED);
+        pushNotif('success', 'Parking confirmed', `${permit.visitor} — Space ${permit.space}, ${permit.from}–${permit.until}`);
+        fetchSpaces();
+        fetchOffers();
+      })
+      .catch(() => {
+        setOfferActionId(null);
+        pushNotif('error', 'Accept failed', "Sorry, I couldn't reach the SpotOn server. Please try again.");
+      });
+  }, [offerActionId, addMsg, pushNotif, fetchSpaces, fetchOffers]);
+
+  const declineOffer = useCallback((waitlistId) => {
+    if (offerActionId) return;
+    setOfferActionId(waitlistId);
+    fetch(`http://localhost:8000/api/waitlist/${waitlistId}/decline`, { method: 'POST' })
+      .then(res => res.json().then(data => ({ ok: res.ok, data })))
+      .then(({ ok, data }) => {
+        setOfferActionId(null);
+        if (!ok) {
+          pushNotif('error', 'Decline failed', data.detail || 'Could not decline the offer. Please try again.');
+          return;
+        }
+        pushNotif('info', 'Offer declined', data.message);
+        fetchSpaces();
+        fetchOffers();
+      })
+      .catch(() => {
+        setOfferActionId(null);
+        pushNotif('error', 'Decline failed', "Sorry, I couldn't reach the SpotOn server. Please try again.");
+      });
+  }, [offerActionId, pushNotif, fetchSpaces, fetchOffers]);
+
   // ── send handler ─────────────────────────────────────────────────────────────
   const sendMessage = useCallback((text) => {
     if (!text.trim()) return;
@@ -75,7 +198,7 @@ export function useResidentDemo() {
           setIsTyping(false);
           agentReply("Temporary resident parking has been approved until 6:00 PM in space V04.", 2400);
           updateSpace('V04', { status: STATUS.RESERVED, ownerUnit: '14', visitor: 'Contractor', permit: 'SP-TEMP-01', until: '6:00 PM' });
-          setActivePermit({ type: 'temp', visitor: 'Contractor', space: 'V04', from: 'Now', until: '6:00 PM', plate: '—', status: 'Active' });
+          setActivePermits(prev => ({ ...prev, V04: { type: 'temp', visitor: 'Contractor', space: 'V04', from: 'Now', until: '6:00 PM', plate: '—', status: 'Active' } }));
           setScenario(SCENARIO.TEMP_CONFIRMED);
           pushNotif('success', 'Temporary parking approved', 'Space V04 reserved until 6:00 PM');
         }, 2600);
@@ -86,26 +209,6 @@ export function useResidentDemo() {
         agentReply("The full 7–11 PM window isn't currently available. I found two compatible alternatives:", 1100, { alternatives: ['6:00–8:00 PM', '9:30–11:30 PM'] });
         return;
       }
-    }
-
-    // ── Scenario 3: early release ───────────────────────────────────────────
-    if (scenario === SCENARIO.BOOKING_CONFIRMED && (lower.includes('left') || lower.includes('early') || lower.includes('gone') || lower.includes('release'))) {
-      const permit = activePermit;
-      if (!permit) { agentReply("I don't see an active permit to release. Let me know if you need help.", 800); return; }
-      setScenario(SCENARIO.EARLY_RELEASE);
-      agentReply(`${permit.visitor}'s permit has been closed and visitor space ${permit.space} is now available. I'll check whether another resident is waiting for this time window.`, 1000);
-      updateSpace(permit.space, { status: STATUS.AVAILABLE, ownerUnit: null, visitor: null, permit: null, until: null });
-      pushNotif('released', `${permit.space} has been released`, `${permit.visitor}'s permit closed early`);
-      // Scenario 4: reallocation after short delay
-      setTimeout(() => {
-        agentReply(`A compatible waitlisted request was found. Space ${permit.space} has been offered to the next eligible resident.`, 1200);
-        updateSpace(permit.space, { status: STATUS.RESERVED, ownerUnit: null, visitor: null, permit: 'SP-1043', until: '5:00 PM' });
-        setActivePermit(null);
-        setWaitlistItem(null);
-        setScenario(SCENARIO.REALLOCATION);
-        pushNotif('info', 'Space reallocated', `${permit.space} has been assigned to a waitlisted resident`);
-      }, 3500);
-      return;
     }
 
     // ── Scenario 5: extension ───────────────────────────────────────────────
@@ -136,12 +239,13 @@ export function useResidentDemo() {
     fetch('http://localhost:8000/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: text }),
+      body: JSON.stringify({ message: text, session_id: sessionId, timezone }),
     })
       .then(res => res.json())
       .then(data => {
         setIsTyping(false);
         addMsg('agent', data.message);
+        if (data.resident) setResidentContext(data.resident);
         if (data.permit) {
           const p = data.permit;
           const permit = {
@@ -153,18 +257,19 @@ export function useResidentDemo() {
             status: 'Upcoming',
             permitId: p.permit_id,
           };
-          setActivePermit(permit);
+          setActivePermits(prev => ({ ...prev, [permit.space]: permit }));
           setScenario(SCENARIO.BOOKING_CONFIRMED);
-          updateSpace(permit.space, { status: STATUS.RESERVED, ownerUnit: '14', visitor: permit.visitor, permit: permit.permitId, until: permit.until });
+          updateSpace(permit.space, { status: STATUS.RESERVED, ownerUnit: data.resident?.unit_number, visitor: permit.visitor, permit: permit.permitId, until: permit.until });
           pushNotif('success', 'Visitor parking confirmed', `${permit.visitor} — Space ${permit.space}, ${permit.from}–${permit.until}`);
         }
         fetchSpaces();
+        fetchOffers();
       })
       .catch(() => {
         setIsTyping(false);
         addMsg('agent', "Sorry, I couldn't reach the SpotOn server. Please try again.");
       });
-  }, [scenario, activePermit, addMsg, agentReply, pushNotif, updateSpace, fetchSpaces]);
+  }, [scenario, addMsg, agentReply, pushNotif, updateSpace, fetchSpaces, fetchOffers]);
 
   // ── quick actions ─────────────────────────────────────────────────────────
   const triggerQuickAction = useCallback((action) => {
@@ -173,17 +278,20 @@ export function useResidentDemo() {
         sendMessage('My brother Alex is coming from 2–5 PM.');
         break;
       case 'release':
-        if (activePermit) {
-          addMsg('resident', `${activePermit.visitor} left early.`);
-          sendMessage(`${activePermit.visitor} left early.`);
+        if (soleActivePermit) {
+          addMsg('resident', `${soleActivePermit.visitor} left early.`);
+          releasePermit(soleActivePermit.space);
+        } else if (Object.keys(activePermits).length > 1) {
+          addMsg('resident', 'I need to release a parking space.');
+          agentReply("You have more than one active booking right now — click the specific space on the site plan to release it.", 800);
         } else {
           addMsg('resident', 'I need to release a parking space.');
           agentReply("I don't see an active permit to release. Let me know the space or visitor name.", 800);
         }
         break;
       case 'extend':
-        if (activePermit) {
-          addMsg('resident', `${activePermit.visitor} needs another two hours.`);
+        if (soleActivePermit) {
+          addMsg('resident', `${soleActivePermit.visitor} needs another two hours.`);
           setScenario(SCENARIO.EXTENSION_REQUEST);
           agentReply("Checking extension policy and future parking availability...", 700, { processing: true });
           setTimeout(() => {
@@ -208,7 +316,7 @@ export function useResidentDemo() {
           setIsTyping(false);
           agentReply("Temporary resident parking has been approved until 6:00 PM in space V04.", 2400);
           updateSpace('V04', { status: STATUS.RESERVED, ownerUnit: '14', visitor: 'Contractor', permit: 'SP-TEMP-01', until: '6:00 PM' });
-          setActivePermit({ type: 'temp', visitor: 'Contractor', space: 'V04', from: 'Now', until: '6:00 PM', plate: '—', status: 'Active' });
+          setActivePermits(prev => ({ ...prev, V04: { type: 'temp', visitor: 'Contractor', space: 'V04', from: 'Now', until: '6:00 PM', plate: '—', status: 'Active' } }));
           setScenario(SCENARIO.TEMP_CONFIRMED);
           pushNotif('success', 'Temporary parking approved', 'Space V04 reserved until 6:00 PM');
         }, 2600);
@@ -224,7 +332,7 @@ export function useResidentDemo() {
       default:
         break;
     }
-  }, [activePermit, addMsg, agentReply, pushNotif, updateSpace, sendMessage]);
+  }, [soleActivePermit, activePermits, addMsg, agentReply, pushNotif, updateSpace, sendMessage, releasePermit]);
 
   // ── waitlist join ─────────────────────────────────────────────────────────
   const joinWaitlist = useCallback(() => {
@@ -243,9 +351,13 @@ export function useResidentDemo() {
     } else if (answer === 'no') {
       addMsg('resident', 'No, Alex is not coming.');
       agentReply("Understood. I've released the reservation and will check the waitlist for any pending requests.", 900);
-      if (activePermit) {
-        updateSpace(activePermit.space, { status: STATUS.AVAILABLE, ownerUnit: null, visitor: null, permit: null, until: null });
-        setActivePermit(null);
+      if (soleActivePermit) {
+        updateSpace(soleActivePermit.space, { status: STATUS.AVAILABLE, ownerUnit: null, visitor: null, permit: null, until: null });
+        setActivePermits(prev => {
+          const next = { ...prev };
+          delete next[soleActivePermit.space];
+          return next;
+        });
       }
       setScenario(SCENARIO.IDLE);
       pushNotif('released', 'Reservation released', 'Space is now available for the community');
@@ -254,30 +366,34 @@ export function useResidentDemo() {
       agentReply("No problem. The reservation will be held until 4:15 PM under the 15-minute grace period.", 800, { gracePeriod: true });
       setScenario(SCENARIO.GRACE_PERIOD);
     }
-  }, [addMsg, agentReply, activePermit, updateSpace, pushNotif]);
+  }, [addMsg, agentReply, soleActivePermit, updateSpace, pushNotif]);
 
   // ── grace period expiry ───────────────────────────────────────────────────
   const simulateGraceExpiry = useCallback(() => {
     agentReply("The 15-minute grace period has expired. The reservation has been released and the waitlist has been checked.", 600);
-    if (activePermit) {
-      updateSpace(activePermit.space, { status: STATUS.AVAILABLE, ownerUnit: null, visitor: null, permit: null, until: null });
-      setActivePermit(null);
+    if (soleActivePermit) {
+      updateSpace(soleActivePermit.space, { status: STATUS.AVAILABLE, ownerUnit: null, visitor: null, permit: null, until: null });
+      setActivePermits(prev => {
+        const next = { ...prev };
+        delete next[soleActivePermit.space];
+        return next;
+      });
     }
     setScenario(SCENARIO.IDLE);
     pushNotif('released', 'Grace period expired', 'Space released and waitlist checked');
-  }, [agentReply, activePermit, updateSpace, pushNotif]);
+  }, [agentReply, soleActivePermit, updateSpace, pushNotif]);
 
   // ── extension confirm ─────────────────────────────────────────────────────
   const confirmExtension = useCallback((until) => {
     addMsg('resident', `Extend to ${until}`);
     agentReply(`Alex's permit has been extended until ${until}. The extension has been applied.`, 800);
-    if (activePermit) {
-      setActivePermit(prev => ({ ...prev, until }));
-      updateSpace(activePermit.space, { until });
+    if (soleActivePermit) {
+      setActivePermits(prev => ({ ...prev, [soleActivePermit.space]: { ...prev[soleActivePermit.space], until } }));
+      updateSpace(soleActivePermit.space, { until });
     }
     setScenario(SCENARIO.EXTENSION_DONE);
     pushNotif('success', 'Permit extended', `Alex's permit extended until ${until}`);
-  }, [addMsg, agentReply, activePermit, updateSpace, pushNotif]);
+  }, [addMsg, agentReply, soleActivePermit, updateSpace, pushNotif]);
 
   // ── alternative time select ───────────────────────────────────────────────
   const selectAltTime = useCallback((slot) => {
@@ -288,10 +404,12 @@ export function useResidentDemo() {
   }, [addMsg, agentReply, pushNotif]);
 
   return {
-    spaces, messages, scenario, activePermit, waitlistItem,
-    notifications, selectedSpace, isTyping,
+    spaces, messages, scenario, activePermits, waitlistItem,
+    notifications, selectedSpace, isTyping, isReleasing,
+    offers, offerActionId, residentContext, switchUnit,
     setSelectedSpace,
-    sendMessage, triggerQuickAction,
+    sendMessage, triggerQuickAction, releasePermit,
+    acceptOffer, declineOffer,
     joinWaitlist, respondNoShow, simulateGraceExpiry,
     confirmExtension, selectAltTime,
     dismissNotif: (id) => setNotifications(prev => prev.filter(n => n.id !== id)),

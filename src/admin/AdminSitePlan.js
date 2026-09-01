@@ -2,12 +2,37 @@ import { useState } from 'react';
 import { ADMIN_STATUS } from './adminData';
 import './AdminSitePlan.css';
 
+const formatTime = (iso) => {
+  try {
+    return new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  } catch {
+    return iso;
+  }
+};
+
+// Mirrors resident/SitePlan.js's normalizePermit — same real backend permit shape.
+const normalizePermit = (p) => {
+  if (!p) return null;
+  return {
+    visitor: p.visitor_name,
+    plate: p.visitor_plate,
+    permitId: p.permit_id,
+    permitType: p.permit_type,
+    from: formatTime(p.start_time),
+    until: formatTime(p.end_time),
+  };
+};
+
+// Same statuses as the Resident Portal (real backend data) — "unknown" is the one
+// case admin and resident are deliberately shown differently: a resident just needs
+// to know the space isn't usable ("Unavailable"), while admin needs to know WHY
+// ("Unauthorized" — a human-reported vehicle that didn't match any record).
 const STATUS_META = {
-  [ADMIN_STATUS.AVAILABLE]: { label: 'Available',  icon: '✓',  mod: 'available' },
-  [ADMIN_STATUS.RESERVED]:  { label: 'Reserved',   icon: '⏱', mod: 'reserved'  },
-  [ADMIN_STATUS.ACTIVE]:    { label: 'Active',      icon: '●',  mod: 'active'    },
-  [ADMIN_STATUS.TEMP]:      { label: 'Temporary',   icon: '🔧', mod: 'temp'      },
-  [ADMIN_STATUS.REVIEW]:    { label: 'Review Req.', icon: '⚠',  mod: 'review'    },
+  [ADMIN_STATUS.AVAILABLE]: { label: 'Available',    icon: '✓', mod: 'available' },
+  [ADMIN_STATUS.RESERVED]:  { label: 'Reserved',      icon: '●', mod: 'reserved'  },
+  [ADMIN_STATUS.ACTIVE]:    { label: 'Occupied',      icon: '●', mod: 'active'    },
+  [ADMIN_STATUS.OFFERED]:   { label: 'Offered',       icon: '⏳', mod: 'offered'  },
+  [ADMIN_STATUS.UNKNOWN]:   { label: 'Unauthorized',  icon: '⚠', mod: 'unknown'  },
 };
 
 // ─── Admin parking stall — shows full details on click ────────────────────────
@@ -17,7 +42,7 @@ function AdminStall({ space, isSelected, onSelect }) {
     <button
       className={`stall stall--${meta.mod}${isSelected ? ' stall--selected' : ''}`}
       onClick={() => onSelect(isSelected ? null : space)}
-      aria-label={`Space ${space.id}: ${meta.label}${space.plate ? `, plate ${space.plate}` : ''}`}
+      aria-label={`Space ${space.id}: ${meta.label}`}
       aria-pressed={isSelected}
     >
       <span className="stall__id">{space.id}</span>
@@ -96,10 +121,17 @@ function LandscapeEdge({ label, trees = 4 }) {
 }
 
 // ─── Admin popover — full operational detail ──────────────────────────────────
-function AdminSpacePopover({ space, onClose }) {
+function AdminSpacePopover({ space, vehicleReports, onClose }) {
   if (!space) return null;
   const meta = STATUS_META[space.status] ?? STATUS_META[ADMIN_STATUS.AVAILABLE];
-  const isReview = space.status === ADMIN_STATUS.REVIEW;
+  const isUnknown = space.status === ADMIN_STATUS.UNKNOWN;
+  const permit = normalizePermit(space.permit);
+  // Admin sees the actual reported plate/reasoning for an unauthorized space — this is
+  // the one place resident and admin views genuinely diverge (resident never sees this).
+  const report = isUnknown
+    ? vehicleReports.find(r => r.space_id === space.id && r.status === 'requires_review')
+    : null;
+
   return (
     <div className="space-popover" role="dialog" aria-label={`Admin details for ${space.id}`}>
       <div className="space-popover__header">
@@ -109,23 +141,113 @@ function AdminSpacePopover({ space, onClose }) {
       <span className={`space-popover__badge space-popover__badge--${space.status}`}>
         {meta.icon} {meta.label}
       </span>
-      {isReview ? (
+      {isUnknown ? (
         <dl className="space-popover__dl">
-          <dt>Plate</dt>    <dd className="space-popover__warn">{space.plate}</dd>
-          <dt>Permit</dt>   <dd>None</dd>
-          <dt>Resident</dt> <dd>No match</dd>
+          <dt>Plate</dt>     <dd className="space-popover__warn">{report?.plate ?? 'Unknown'}</dd>
+          <dt>Resident</dt>  <dd>No match</dd>
+          <dt>Visitor</dt>   <dd>No match</dd>
+          <dt>Reported</dt>  <dd>{report ? formatTime(report.reported_at) : '—'}</dd>
         </dl>
+      ) : permit ? (
+        <dl className="space-popover__dl">
+          <dt>Visitor</dt><dd>{permit.visitor}</dd>
+          <dt>Plate</dt>  <dd>{permit.plate}</dd>
+          <dt>Permit</dt> <dd>{permit.permitId}</dd>
+          <dt>From</dt>   <dd>{permit.from}</dd>
+          <dt>Until</dt>  <dd>{permit.until}</dd>
+        </dl>
+      ) : space.status === ADMIN_STATUS.OFFERED ? (
+        <p className="space-popover__note">This space is being held for a waitlisted resident.</p>
       ) : space.status === ADMIN_STATUS.AVAILABLE ? (
         <p className="space-popover__note">Space is available.</p>
       ) : (
-        <dl className="space-popover__dl">
-          {space.unit    && <><dt>Unit</dt>    <dd>{space.unit}</dd></>}
-          {space.visitor && <><dt>Visitor</dt> <dd>{space.visitor}</dd></>}
-          {space.plate   && <><dt>Plate</dt>   <dd>{space.plate}</dd></>}
-          {space.permit  && <><dt>Permit</dt>  <dd>{space.permit}</dd></>}
-          {space.from    && <><dt>From</dt>    <dd>{space.from}</dd></>}
-          {space.until   && <><dt>Until</dt>   <dd>{space.until}</dd></>}
-        </dl>
+        <p className="space-popover__note">No permit details on file for this space.</p>
+      )}
+    </div>
+  );
+}
+
+// ─── Review strip — fixed-height row of flagged spaces below the map ──────────
+// A compact chip per space needing review, not a growing card list, so the map's
+// share of the column height never changes as reports come and go. Clicking a chip
+// opens a centered modal (not an inline popover) — that avoids both problems an
+// inline card had here: getting clipped by rp-left's overflow:hidden when there's
+// no room below the strip, and covering the map when opened above it. A modal is
+// also what makes "stays open until the admin acts" feel intentional rather than
+// like a glitch, and gives the reasoning text room to show in full, no truncation.
+function ReviewModal({ report, onClose, onMarkExpected, onReportToSecurity, isBusy }) {
+  const reasons = (report.reasoning || '').split('|').map(s => s.trim()).filter(Boolean);
+  return (
+    <div className="review-modal-backdrop" onClick={onClose}>
+      <div
+        className="review-modal"
+        role="dialog"
+        aria-label={`Review details for space ${report.space_id}`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="review-modal__header">
+          <span className="review-modal__space">Space {report.space_id}</span>
+          <button type="button" className="review-modal__close" onClick={onClose} aria-label="Close">✕</button>
+        </div>
+        <div className="review-modal__plate">{report.plate}</div>
+        <ul className="review-modal__reasons">
+          {reasons.map((r, i) => <li key={i}>{r}</li>)}
+        </ul>
+        <div className="review-modal__actions">
+          <button
+            type="button"
+            className="review-modal__btn review-modal__btn--ok"
+            onClick={() => onMarkExpected(report.report_id)}
+            disabled={isBusy}
+          >
+            {isBusy ? 'Working…' : '✓ Mark as Expected'}
+          </button>
+          <button
+            type="button"
+            className="review-modal__btn review-modal__btn--deny"
+            onClick={() => onReportToSecurity(report.report_id)}
+            disabled={isBusy}
+          >
+            {isBusy ? 'Working…' : '✕ Report to Security'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ReviewStrip({ reports, onMarkExpected, onReportToSecurity, actionId }) {
+  const [openId, setOpenId] = useState(null);
+  const pending = reports.filter(r => r.status === 'requires_review');
+  // If the open report resolves (approved/reported) it drops out of `pending` on the
+  // next fetch, so this naturally becomes null and the modal closes itself.
+  const openReport = pending.find(r => r.report_id === openId) ?? null;
+  return (
+    <div className="review-strip" aria-label="Spaces needing review">
+      <span className="review-strip__label">
+        {pending.length > 0 ? `⚠ Needs Review (${pending.length})` : 'No vehicles flagged for review'}
+      </span>
+      <div className="review-strip__chips">
+        {pending.map(r => (
+          <button
+            key={r.report_id}
+            type="button"
+            className="review-chip"
+            onClick={() => setOpenId(r.report_id)}
+            aria-label={`Space ${r.space_id} needs review — plate ${r.plate}`}
+          >
+            <span aria-hidden="true">⚠</span> {r.space_id}
+          </button>
+        ))}
+      </div>
+      {openReport && (
+        <ReviewModal
+          report={openReport}
+          onClose={() => setOpenId(null)}
+          onMarkExpected={onMarkExpected}
+          onReportToSecurity={onReportToSecurity}
+          isBusy={actionId === openReport.report_id}
+        />
       )}
     </div>
   );
@@ -177,9 +299,13 @@ function CapacityBar({ spaces, waitlistCount, reviewCount }) {
 }
 
 // ─── Main AdminSitePlan ───────────────────────────────────────────────────────
-export default function AdminSitePlan({ spaces, selectedSpace, onSelectSpace, waitlistCount = 0, reviewCount = 0 }) {
+export default function AdminSitePlan({
+  spaces, selectedSpace, onSelectSpace, vehicleReports = [], waitlistCount = 0, reviewCount = 0,
+  onMarkExpected, onReportToSecurity, reportActionId,
+}) {
   const [localSelected, setLocalSelected] = useState(null);
-  const active = selectedSpace ?? localSelected;
+  const activeId = (selectedSpace ?? localSelected)?.id;
+  const active = spaces.find(s => s.id === activeId) ?? null;
 
   const handleSelect = (space) => {
     setLocalSelected(space);
@@ -261,7 +387,20 @@ export default function AdminSitePlan({ spaces, selectedSpace, onSelectSpace, wa
         </div>
       </div>
 
-      {active && <AdminSpacePopover space={active} onClose={() => handleSelect(null)} />}
+      <ReviewStrip
+        reports={vehicleReports}
+        onMarkExpected={onMarkExpected}
+        onReportToSecurity={onReportToSecurity}
+        actionId={reportActionId}
+      />
+
+      {active && (
+        <AdminSpacePopover
+          space={active}
+          vehicleReports={vehicleReports}
+          onClose={() => handleSelect(null)}
+        />
+      )}
 
       <p className="siteplan__disclaimer">Fictional demo community. All data is simulated.</p>
     </div>

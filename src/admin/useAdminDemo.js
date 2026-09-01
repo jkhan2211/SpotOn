@@ -1,23 +1,50 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import {
-  INITIAL_ADMIN_SPACES, INITIAL_VEHICLE_QUEUE, INITIAL_WAITLIST,
+  INITIAL_WAITLIST,
   INITIAL_ACTIVITY, INITIAL_ADMIN_MESSAGES, ADMIN_STATUS, POLICIES,
 } from './adminData';
+
+// Separate from the resident session id — this is a different role/agent entirely
+// (see agent/admin_agent.py). Same "not real auth" caveat as resident unit context.
+const ADMIN_SESSION_ID_KEY = 'spoton_admin_session_id';
+const adminSessionId = sessionStorage.getItem(ADMIN_SESSION_ID_KEY) || crypto.randomUUID();
+sessionStorage.setItem(ADMIN_SESSION_ID_KEY, adminSessionId);
 
 let msgId = 20;
 const nextId = () => ++msgId;
 const now = () => new Date().toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit' });
 
 export function useAdminDemo() {
-  const [spaces,       setSpaces]       = useState(INITIAL_ADMIN_SPACES);
+  // Real backend space data — the exact same endpoint the Resident Portal uses, so
+  // the admin site plan shows the same live state, not a separate fake copy.
+  const [spaces, setSpaces] = useState([]);
   const [messages,     setMessages]     = useState(INITIAL_ADMIN_MESSAGES);
   const [isTyping,     setIsTyping]     = useState(false);
-  const [vehicleQueue, setVehicleQueue] = useState(INITIAL_VEHICLE_QUEUE);
+  // Real, backend-persisted vehicle reports (unknown_vehicle.csv) — unlike the rest of
+  // this admin dashboard's mock waitlist/activity, this part is wired for real.
+  const [vehicleReports, setVehicleReports] = useState([]);
+  const [reportActionId, setReportActionId] = useState(null);
   const [waitlist]                      = useState(INITIAL_WAITLIST);
   const [activity,     setActivity]     = useState(INITIAL_ACTIVITY);
   const [selectedSpace, setSelectedSpace] = useState(null);
   const [notifications, setNotifications] = useState([]);
   const notifId = useRef(0);
+
+  const fetchSpaces = useCallback(() => {
+    fetch('http://localhost:8000/api/parking-spaces')
+      .then(res => res.json())
+      .then(data => setSpaces(data.spaces || []))
+      .catch(err => console.error('Failed to fetch parking spaces:', err));
+  }, []);
+
+  const fetchVehicleReports = useCallback(() => {
+    fetch('http://localhost:8000/api/admin/vehicle-reports')
+      .then(res => res.json())
+      .then(data => setVehicleReports(data.reports || []))
+      .catch(err => console.error('Failed to fetch vehicle reports:', err));
+  }, []);
+
+  useEffect(() => { fetchSpaces(); fetchVehicleReports(); }, [fetchSpaces, fetchVehicleReports]);
 
   // ── helpers ──────────────────────────────────────────────────────────────────
   const addMsg = useCallback((role, text, extra = {}) => {
@@ -42,74 +69,11 @@ export function useAdminDemo() {
     setActivity(prev => [{ ts: now(), text, source }, ...prev]);
   }, []);
 
-  const updateSpace = useCallback((spaceId, patch) => {
-    setSpaces(prev => prev.map(s => s.id === spaceId ? { ...s, ...patch } : s));
-  }, []);
-
   // ── send message ──────────────────────────────────────────────────────────────
   const sendMessage = useCallback((text) => {
     if (!text.trim()) return;
     addMsg('admin', text);
     const lower = text.toLowerCase();
-
-    // ── Scenario 1 & 4: vehicle lookup ────────────────────────────────────────
-    const plateMatch = text.match(/\b([A-Z]{2,3}\d{3,4}|\d{3,4}[A-Z]{2,3})\b/i);
-    if (plateMatch || lower.includes('xyz999') || lower.includes('abc123') || lower.includes('vehicle') || lower.includes('plate') || lower.includes('check')) {
-      const plate = plateMatch ? plateMatch[1].toUpperCase() : (lower.includes('abc123') ? 'ABC123' : 'XYZ999');
-
-      // Step-by-step investigation
-      agentReply('Checking active visitor permits...', 600, { processing: true });
-      setTimeout(() => {
-        setIsTyping(true);
-        setTimeout(() => {
-          setIsTyping(false);
-          setMessages(prev => [...prev, { id: nextId(), role: 'agent', ts: now(), text: 'Checking resident vehicle records...', processing: true }]);
-          setTimeout(() => {
-            setIsTyping(true);
-            setTimeout(() => {
-              setIsTyping(false);
-              setMessages(prev => [...prev, { id: nextId(), role: 'agent', ts: now(), text: 'Checking temporary resident permits...', processing: true }]);
-              setTimeout(() => {
-                setIsTyping(true);
-                setTimeout(() => {
-                  setIsTyping(false);
-                  // ABC123 = known match
-                  if (plate === 'ABC123') {
-                    setMessages(prev => [...prev, {
-                      id: nextId(), role: 'agent', ts: now(),
-                      text: `${plate} matches an active visitor permit for Unit 24, valid until 5:00 PM. No action required.`,
-                      infoCard: { plate, unit: '24', permit: 'SP-1042', until: '5:00 PM', space: 'V07' },
-                    }]);
-                  } else {
-                    // Unknown vehicle
-                    setMessages(prev => [...prev, {
-                      id: nextId(), role: 'agent', ts: now(),
-                      text: `I couldn't match ${plate} to an active visitor permit, registered resident vehicle, or temporary parking permit. I've added it to Vehicles Requiring Review.`,
-                    }]);
-                    // Add to queue if not already there
-                    setVehicleQueue(prev => {
-                      if (prev.find(v => v.plate === plate)) return prev;
-                      return [...prev, {
-                        id: `VR-00${prev.length + 1}`,
-                        plate, space: 'V11',
-                        firstSeen: `Today, ${now()}`, lastSeen: `Today, ${now()}`,
-                        observations: 1, permitMatch: 'None', residentMatch: 'None', tempMatch: 'None',
-                        history: [{ date: 'Today', time: now() }],
-                        status: 'pending', prevDecision: null,
-                      }];
-                    });
-                    updateSpace('V11', { status: ADMIN_STATUS.REVIEW, plate });
-                    logActivity(`${plate} added to vehicle review queue.`, 'SpotOn');
-                    pushNotif('warning', 'Vehicle added to review queue', `${plate} — no matching permit or resident record`);
-                  }
-                }, 900);
-              }, 700);
-            }, 700);
-          }, 700);
-        }, 700);
-      }, 700);
-      return;
-    }
 
     // ── Scenario 6: capacity query ────────────────────────────────────────────
     if (lower.includes('full') || lower.includes('capacity') || lower.includes('available') || lower.includes('how many')) {
@@ -137,16 +101,45 @@ export function useAdminDemo() {
       return;
     }
 
-    agentReply("I can help with vehicle lookups, capacity queries, waitlist status, recent activity, and parking policy. What do you need?", 900);
-  }, [spaces, waitlist, activity, addMsg, agentReply, pushNotif, logActivity, updateSpace]);
+    // ── Default: vehicle report/lookup — hits the real admin backend ───────────
+    // This is deliberately the fallback, not a keyword-gated branch: a bare plate with
+    // a space in it ("XYZ 999"), a reply like "yes, I have one", or the space mentioned
+    // before the plate would all miss a keyword/regex gate but are still valid report
+    // messages — the agent itself (see agent/admin_agent.py) is what should decide
+    // whether to ask a clarifying question or proceed, not a scripted string match.
+    setIsTyping(true);
+    fetch('http://localhost:8000/api/admin/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: text, session_id: adminSessionId }),
+    })
+      .then(res => res.json())
+      .then(data => {
+        setIsTyping(false);
+        addMsg('agent', data.message);
+        fetchVehicleReports();
+        fetchSpaces();
+      })
+      .catch(() => {
+        setIsTyping(false);
+        addMsg('agent', "Sorry, I couldn't reach the SpotOn server. Please try again.");
+      });
+  }, [spaces, waitlist, activity, addMsg, agentReply, fetchVehicleReports, fetchSpaces]);
 
   // ── quick actions ─────────────────────────────────────────────────────────────
   const triggerQuickAction = useCallback((action) => {
     switch (action) {
-      case 'vehicles':
+      case 'vehicles': {
         addMsg('admin', 'Show vehicles requiring review.');
-        agentReply(`There is currently ${vehicleQueue.filter(v => v.status === 'pending').length} vehicle requiring review. Plate XYZ999 has been observed 3 times with no matching permit or resident record.`, 900, { showVehicleQueue: true });
+        const pending = vehicleReports.filter(r => r.status === 'requires_review').length;
+        agentReply(
+          pending > 0
+            ? `There ${pending === 1 ? 'is' : 'are'} currently ${pending} vehicle report${pending === 1 ? '' : 's'} requiring review — see the Vehicle Review card above.`
+            : "There are no vehicle reports requiring review right now.",
+          900,
+        );
         break;
+      }
       case 'capacity':
         addMsg('admin', 'Show current capacity.');
         sendMessage('How full is visitor parking right now?');
@@ -166,31 +159,62 @@ export function useAdminDemo() {
       default:
         break;
     }
-  }, [vehicleQueue, waitlist, activity, addMsg, agentReply, sendMessage]);
+  }, [vehicleReports, waitlist, activity, addMsg, agentReply, sendMessage]);
 
-  // ── vehicle review decision ───────────────────────────────────────────────────
-  const resolveVehicle = useCallback((vehicleId, decision) => {
-    setVehicleQueue(prev => prev.map(v =>
-      v.id === vehicleId
-        ? { ...v, status: decision, prevDecision: { decision, date: now() } }
-        : v
-    ));
-    const vehicle = vehicleQueue.find(v => v.id === vehicleId);
-    if (!vehicle) return;
-    const label = decision === 'recognized' ? 'Marked Recognized' : 'Kept Unapproved';
-    logActivity(`${vehicle.plate} — ${label} by administrator.`, 'Admin');
-    pushNotif(decision === 'recognized' ? 'success' : 'info', `${vehicle.plate} ${label}`, `Decision recorded in audit log`);
-    if (decision === 'recognized') {
-      updateSpace(vehicle.space, { status: ADMIN_STATUS.AVAILABLE, plate: null });
-    }
-    addMsg('agent', `${vehicle.plate} has been ${decision === 'recognized' ? 'marked as recognized' : 'kept as unapproved'}. The decision has been recorded in the audit log.`);
-  }, [vehicleQueue, addMsg, logActivity, pushNotif, updateSpace]);
+  // ── vehicle review decision — real backend calls, deterministic (no agent) ────
+  const markExpected = useCallback((reportId) => {
+    if (reportActionId) return;
+    setReportActionId(reportId);
+    fetch(`http://localhost:8000/api/admin/vehicle-reports/${reportId}/expected`, { method: 'POST' })
+      .then(res => res.json().then(data => ({ ok: res.ok, data })))
+      .then(({ ok, data }) => {
+        setReportActionId(null);
+        if (!ok) {
+          pushNotif('error', 'Action failed', data.detail || 'Could not update the report. Please try again.');
+          return;
+        }
+        const report = vehicleReports.find(r => r.report_id === reportId);
+        logActivity(`${report?.plate ?? reportId} — Marked Expected by administrator.`, 'Admin');
+        pushNotif('success', 'Marked as expected', 'Decision recorded — the space remains unavailable to residents.');
+        fetchVehicleReports();
+      })
+      .catch(() => {
+        setReportActionId(null);
+        pushNotif('error', 'Action failed', "Sorry, I couldn't reach the SpotOn server. Please try again.");
+      });
+  }, [reportActionId, vehicleReports, pushNotif, logActivity, fetchVehicleReports]);
+
+  const reportToSecurity = useCallback((reportId) => {
+    if (reportActionId) return;
+    setReportActionId(reportId);
+    fetch(`http://localhost:8000/api/admin/vehicle-reports/${reportId}/notify-security`, { method: 'POST' })
+      .then(res => res.json().then(data => ({ ok: res.ok, data })))
+      .then(({ ok, data }) => {
+        setReportActionId(null);
+        if (!ok) {
+          pushNotif('error', 'Action failed', data.detail || 'Could not notify security. Please try again.');
+          return;
+        }
+        const report = vehicleReports.find(r => r.report_id === reportId);
+        logActivity(`${report?.plate ?? reportId} — Reported to Security by administrator.`, 'Admin');
+        pushNotif(
+          data.security_email_sent ? 'success' : 'error',
+          data.security_email_sent ? 'Security notified' : 'Report saved — email failed',
+          data.message,
+        );
+        fetchVehicleReports();
+      })
+      .catch(() => {
+        setReportActionId(null);
+        pushNotif('error', 'Action failed', "Sorry, I couldn't reach the SpotOn server. Please try again.");
+      });
+  }, [reportActionId, vehicleReports, pushNotif, logActivity, fetchVehicleReports]);
 
   return {
-    spaces, messages, isTyping, vehicleQueue, waitlist, activity,
+    spaces, messages, isTyping, vehicleReports, reportActionId, waitlist, activity,
     selectedSpace, notifications,
     setSelectedSpace,
-    sendMessage, triggerQuickAction, resolveVehicle,
+    sendMessage, triggerQuickAction, markExpected, reportToSecurity,
     dismissNotif: (id) => setNotifications(prev => prev.filter(n => n.id !== id)),
   };
 }

@@ -28,3 +28,6 @@ q-dev-chat-*.md
 
 # Runtime mock data (changes at runtime)
 /mock_data/
+
+# Local-only dev convenience script (not for other contributors)
+/spoton.sh

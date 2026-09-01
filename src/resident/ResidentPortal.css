@@ -1,8 +1,7 @@
 .resident-portal {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 64px);
-  overflow: hidden;
+  min-height: calc(100vh - 64px);
   background: var(--color-bg);
 }
 
@@ -35,6 +34,12 @@
   margin-top: 1px;
 }
 
+.rp-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
 .rp-header__badge {
   display: inline-flex;
   align-items: center;
@@ -55,7 +60,27 @@
   background: #4ade80;
 }
 
-/* ── Two-column body ── */
+.rp-header__switch {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  background: transparent;
+  border: 1px solid var(--color-border);
+  padding: 0.3rem 0.75rem;
+  border-radius: 100px;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.rp-header__switch:hover {
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+/* ── Two-column body ──
+   Sized directly off the viewport rather than "whatever's left over" from a fixed-
+   height shell — so the map keeps a stable size no matter what appears above it
+   (an offer banner, more toasts, etc.); the page grows/scrolls instead of the map
+   shrinking. */
 .rp-body {
   display: grid;
   grid-template-columns: 1fr 360px;
@@ -64,9 +89,8 @@
   max-width: 1400px;
   width: 100%;
   margin: 0 auto;
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
+  height: calc(100vh - 150px);
+  min-height: 520px;
 }
 
 .rp-left {

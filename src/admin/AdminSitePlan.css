@@ -45,38 +45,177 @@
   color: #b45309;
 }
 
-/* ── Review stall state ── */
-.stall--review {
-  background: #fef3c7;
-  border-color: #d97706;
-  animation: review-pulse 2s ease-in-out infinite;
-}
-
-@keyframes review-pulse {
-  0%, 100% { border-color: #d97706; }
-  50%       { border-color: #f59e0b; box-shadow: 0 0 0 2px rgba(245,158,11,0.25); }
-}
-
-.stall--review .stall__id    { color: #92400e; }
-.stall--review .stall__icon  { color: #d97706; }
-.stall--review .stall__label { color: #92400e; }
-
-/* ── Temp stall state ── */
-.stall--temp {
-  background: #ede9fe;
-  border-color: #7c3aed;
-}
-
-.stall--temp .stall__id    { color: #4c1d95; }
-.stall--temp .stall__icon  { color: #7c3aed; }
-.stall--temp .stall__label { color: #4c1d95; }
-
-/* ── Legend dots for new states ── */
-.sp-legend__dot--temp   { background: #ede9fe; color: #4c1d95; border: 1.5px solid #7c3aed; }
-.sp-legend__dot--review { background: #fef3c7; color: #92400e; border: 1.5px solid #d97706; }
-
 /* ── Admin popover warn text ── */
 .space-popover__warn {
   color: #b45309;
   font-weight: 700;
+}
+
+/* ── Review strip — fixed-height row below the map, does not grow/shrink the map ── */
+.review-strip {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 34px;
+  padding: 0 0.1rem;
+}
+
+.review-strip__label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.review-strip__chips {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.review-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #92400e;
+  background: #fef3c7;
+  border: 1.5px solid #d97706;
+  border-radius: 100px;
+  padding: 0.25rem 0.65rem;
+  cursor: pointer;
+  font-family: var(--font);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.review-chip:hover,
+.review-chip:focus-visible {
+  background: #fde68a;
+}
+
+/* ── Review modal — centered, stays open until the admin acts or closes it ── */
+.review-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15,23,42,0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  animation: review-modal-fade 0.12s ease;
+}
+
+@keyframes review-modal-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.review-modal {
+  width: 340px;
+  max-width: calc(100vw - 2rem);
+  background: var(--color-surface);
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+  padding: 1.1rem 1.25rem;
+}
+
+.review-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.6rem;
+}
+
+.review-modal__space {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: var(--color-primary);
+}
+
+.review-modal__close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1rem;
+  color: var(--color-text-muted);
+  line-height: 1;
+  padding: 0.2rem;
+}
+
+.review-modal__plate {
+  font-size: 1.1rem;
+  font-weight: 800;
+  font-family: monospace;
+  letter-spacing: 0.06em;
+  color: #92400e;
+  background: #fef3c7;
+  border: 1px solid #d97706;
+  border-radius: 6px;
+  padding: 0.3rem 0.6rem;
+  display: inline-block;
+  margin-bottom: 0.75rem;
+}
+
+.review-modal__reasons {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 1rem;
+}
+
+.review-modal__reasons li {
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: var(--color-text);
+  padding-left: 0.9rem;
+  position: relative;
+}
+
+.review-modal__reasons li::before {
+  content: '•';
+  position: absolute;
+  left: 0;
+  color: var(--color-text-muted);
+}
+
+.review-modal__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.review-modal__btn {
+  font-size: 0.85rem;
+  font-weight: 700;
+  padding: 0.55rem 0;
+  border-radius: 8px;
+  border: 1.5px solid transparent;
+  cursor: pointer;
+}
+
+.review-modal__btn--ok {
+  background: #dcfce7;
+  color: #166534;
+  border-color: #16a34a;
+}
+
+.review-modal__btn--ok:hover { background: #bbf7d0; }
+
+.review-modal__btn--deny {
+  background: #fee2e2;
+  color: #991b1b;
+  border-color: #dc2626;
+}
+
+.review-modal__btn--deny:hover { background: #fecaca; }
+
+.review-modal__btn:disabled {
+  opacity: 0.6;
+  cursor: default;
 }

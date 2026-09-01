@@ -1,48 +1,16 @@
 // ─── Admin mock data ──────────────────────────────────────────────────────────
-
+// Space status values match the REAL backend vocabulary exactly (see
+// src/resident/residentData.js STATUS) — the admin site plan now fetches real
+// /api/parking-spaces data, same as the Resident Portal, so labels/statuses must
+// line up. "unknown" is the one status admin and resident deliberately show
+// differently (Unauthorized vs Unavailable) — see AdminSitePlan.js STATUS_META.
 export const ADMIN_STATUS = {
   AVAILABLE: 'available',
   RESERVED:  'reserved',
   ACTIVE:    'active',
-  TEMP:      'temp',
-  REVIEW:    'review',
+  OFFERED:   'offered',
+  UNKNOWN:   'unknown',
 };
-
-export const INITIAL_ADMIN_SPACES = [
-  { id: 'V01', status: ADMIN_STATUS.AVAILABLE, unit: null,  visitor: null,  plate: null,     permit: null,        from: null,       until: null },
-  { id: 'V02', status: ADMIN_STATUS.ACTIVE,    unit: '8',   visitor: 'Sam', plate: 'LMN456', permit: 'SP-1038',   from: '1:00 PM',  until: '4:00 PM' },
-  { id: 'V03', status: ADMIN_STATUS.RESERVED,  unit: '3',   visitor: null,  plate: null,     permit: 'SP-1039',   from: '3:00 PM',  until: '6:00 PM' },
-  { id: 'V04', status: ADMIN_STATUS.AVAILABLE, unit: null,  visitor: null,  plate: null,     permit: null,        from: null,       until: null },
-  { id: 'V05', status: ADMIN_STATUS.ACTIVE,    unit: '21',  visitor: 'Mia', plate: 'QRS789', permit: 'SP-1040',   from: '12:00 PM', until: '5:30 PM' },
-  { id: 'V06', status: ADMIN_STATUS.TEMP,      unit: '17',  visitor: 'Contractor', plate: 'TMP001', permit: 'SP-TEMP-02', from: 'Now', until: '6:00 PM' },
-  { id: 'V07', status: ADMIN_STATUS.AVAILABLE, unit: null,  visitor: null,  plate: null,     permit: null,        from: null,       until: null },
-  { id: 'V08', status: ADMIN_STATUS.ACTIVE,    unit: '29',  visitor: 'Dan', plate: 'UVW321', permit: 'SP-1041',   from: '2:00 PM',  until: '8:00 PM' },
-  { id: 'V09', status: ADMIN_STATUS.RESERVED,  unit: '5',   visitor: null,  plate: null,     permit: 'SP-1044',   from: '4:00 PM',  until: '7:00 PM' },
-  { id: 'V10', status: ADMIN_STATUS.AVAILABLE, unit: null,  visitor: null,  plate: null,     permit: null,        from: null,       until: null },
-  { id: 'V11', status: ADMIN_STATUS.AVAILABLE, unit: null,  visitor: null,  plate: null,     permit: null,        from: null,       until: null },
-  { id: 'V12', status: ADMIN_STATUS.ACTIVE,    unit: '33',  visitor: 'Priya', plate: 'XYZ111', permit: 'SP-1045', from: '1:30 PM', until: '9:00 PM' },
-];
-
-export const INITIAL_VEHICLE_QUEUE = [
-  {
-    id:           'VR-001',
-    plate:        'XYZ999',
-    space:        'V11',
-    firstSeen:    'Today, 10:14 AM',
-    lastSeen:     'Today, 10:14 AM',
-    observations: 3,
-    permitMatch:  'None',
-    residentMatch:'None',
-    tempMatch:    'None',
-    history: [
-      { date: 'Aug 26', time: '9:15 AM' },
-      { date: 'Aug 27', time: '7:42 PM' },
-      { date: 'Aug 29', time: '8:10 AM' },
-    ],
-    status:       'pending',   // pending | recognized | unapproved | resolved
-    prevDecision: null,
-  },
-];
 
 export const INITIAL_WAITLIST = [
   { id: 'WL-102', unit: '18', from: '3:30 PM', until: '6:00 PM', status: 'Waiting' },
@@ -70,7 +38,7 @@ export const INITIAL_ADMIN_MESSAGES = [
   {
     id: 1,
     role: 'agent',
-    text: "Hello. I'm monitoring Maple Grove Townhomes. Currently 7 of 12 visitor spaces are allocated, there are 2 waitlisted requests, and 1 vehicle requires your review. How can I help?",
+    text: "Hi! I'm your SpotOn Agent for Maple Grove Townhomes. 🅿️\n\nDo you have a licence plate to report today? I'll check it against resident vehicles, visitor permits, and temporary resident permits on file.",
     ts: '10:15 AM',
   },
 ];
