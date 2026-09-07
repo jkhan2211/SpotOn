@@ -1,0 +1,185 @@
+Diagram:
+  DefinitionFiles:
+    - Type: URL
+      Url: "https://raw.githubusercontent.com/awslabs/diagram-as-code/main/definitions/definition-for-aws-icons-light.yaml"
+
+  Resources:
+    Canvas:
+      Type: AWS::Diagram::Canvas
+      Direction: vertical
+      Children:
+        - User
+        - Frontend
+        - Backend
+        - ServicesRow
+
+    # Resident / Admin: human entry point (generic "User" preset icon)
+    User:
+      Type: AWS::Diagram::Resource
+      Preset: User
+      Title: "Resident / Admin"
+
+    # React frontend, hosted on AWS Amplify
+    Frontend:
+      Type: AWS::Amplify::App
+      Title: "React Frontend (AWS Amplify)"
+
+    # FastAPI backend, hosted on AWS App Runner
+    Backend:
+      Type: AWS::AppRunner::Service
+      Title: "FastAPI API"
+      Options:
+        GroupingOffset: true
+
+    # Bottom row: agent branch in the middle, DynamoDB and SES as the
+    # two shared services on either side, so arrows fan out cleanly without crossing.
+    # Align: top keeps DynamoDB/SES flush with the AgentCore Runtime icon
+    # instead of being vertically centered against the much taller Strands
+    # Agents box below it.
+    ServicesRow:
+      Type: AWS::Diagram::HorizontalStack
+      Align: top
+      Children:
+        - DynamoDB
+        - AgentBranch
+        - SES
+
+    # Amazon DynamoDB: single shared node for all SpotOn application state
+    # (residents, vehicles, parking spaces, permits, waitlist, vehicle/unknown-vehicle reports)
+    DynamoDB:
+      Type: AWS::DynamoDB
+      Title: "Amazon DynamoDB"
+
+    # Vertical pairing of AgentCore Runtime -> Strands Agents (undecorated
+    # layout container, not an AWS resource; keeps the two boxes stacked and
+    # sized normally instead of forcing an oversized parent/child box).
+    AgentBranch:
+      Type: AWS::Diagram::VerticalStack
+      Children:
+        - AgentCoreRuntime
+        - StrandsAgents
+
+    # Amazon Bedrock AgentCore Runtime.
+    # No dedicated AgentCore icon exists in the current AWS icon set, so this
+    # uses the closest supported representation: the generic "Amazon Bedrock"
+    # preset icon, retitled to name the AgentCore Runtime specifically.
+    AgentCoreRuntime:
+      Type: AWS::Diagram::Resource
+      Preset: Amazon Bedrock
+      Title: "Amazon Bedrock AgentCore Runtime"
+
+    # SpotOn Strands Agents: a logical component with no AWS service icon
+    # (Strands Agents is an open-source agent framework, not an AWS service).
+    # Giving it a real child (SpotOnTools) makes the renderer treat it as a
+    # bordered group box instead of a zero-size text label; a soft fill +
+    # black border keeps it visually distinct from the AWS service icons
+    # without looking like an error/placeholder.
+    StrandsAgents:
+      Type: AWS::Diagram::Resource
+      Title: "SpotOn Strands Agents"
+      FillColor: "rgba(240, 240, 240, 255)"
+      BorderColor: "rgba(0, 0, 0, 255)"
+      Children:
+        - SpotOnTools
+
+    # SpotOn tools: the functions the agents call to reach DynamoDB / SES.
+    # A small placeholder child (SpotOnToolsInner) forces this to render as a
+    # tight bordered/filled box instead of bare floating text - the same
+    # "empty resource child" pattern used for StrandsAgents above.
+    SpotOnTools:
+      Type: AWS::Diagram::Resource
+      Title: "SpotOn Tools"
+      FillColor: "rgba(224, 236, 253, 255)"
+      BorderColor: "rgba(0, 0, 0, 255)"
+      Children:
+        - SpotOnToolsInner
+
+    SpotOnToolsInner:
+      Type: AWS::Diagram::Resource
+
+    # Amazon SES: single shared node for resident and security notifications
+    SES:
+      Type: AWS::SES
+      Title: "Amazon SES"
+
+  Links:
+    # Resident / Admin -> React frontend (Amplify)
+    - Source: User
+      SourcePosition: S
+      Target: Frontend
+      TargetPosition: N
+      Type: orthogonal
+      TargetArrowHead:
+        Type: Open
+
+    # React frontend (Amplify) -> FastAPI backend (App Runner)
+    - Source: Frontend
+      SourcePosition: S
+      Target: Backend
+      TargetPosition: N
+      Type: orthogonal
+      TargetArrowHead:
+        Type: Open
+
+    # Deterministic route: FastAPI -> DynamoDB directly
+    - Source: Backend
+      SourcePosition: SSW
+      Target: DynamoDB
+      TargetPosition: N
+      Type: orthogonal
+      TargetArrowHead:
+        Type: Open
+      Labels:
+        TargetLeft:
+          Title: "deterministic"
+
+    # Agentic route: FastAPI -> Bedrock AgentCore Runtime
+    - Source: Backend
+      SourcePosition: S
+      Target: AgentCoreRuntime
+      TargetPosition: N
+      Type: orthogonal
+      TargetArrowHead:
+        Type: Open
+      Labels:
+        TargetLeft:
+          Title: "agentic"
+
+    # AgentCore Runtime hosts / invokes the SpotOn Strands Agents
+    - Source: AgentCoreRuntime
+      SourcePosition: S
+      Target: StrandsAgents
+      TargetPosition: N
+      Type: orthogonal
+      TargetArrowHead:
+        Type: Open
+
+    # Deterministic route: FastAPI -> SES directly
+    - Source: Backend
+      SourcePosition: SSE
+      Target: SES
+      TargetPosition: N
+      Type: orthogonal
+      TargetArrowHead:
+        Type: Open
+      Labels:
+        TargetRight:
+          Title: "deterministic"
+
+    # SpotOn Tools (called by the Strands Agents) -> shared DynamoDB
+    - Source: SpotOnTools
+      SourcePosition: SW
+      Target: DynamoDB
+      TargetPosition: S
+      Type: orthogonal
+      TargetArrowHead:
+        Type: Open
+
+    # SpotOn Tools (called by the Strands Agents) -> shared SES
+    - Source: SpotOnTools
+      SourcePosition: SE
+      Target: SES
+      TargetPosition: S
+      Type: orthogonal
+      TargetArrowHead:
+        Type: Open
