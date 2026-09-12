@@ -50,6 +50,8 @@ export default function Features() {
         <p className="features__subheading">
           SpotOn handles the routine so your team handles the exceptional.
         </p>
+        
+        {/* eslint-disable-next-line jsx-a11y/no-redundant-roles -- list-style:none strips the implicit list role in Safari/VoiceOver */}
         <ul className="features__grid" role="list">
           {features.map((f) => (
             <li key={f.title} className="feature-card">
