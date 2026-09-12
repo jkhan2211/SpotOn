@@ -1,0 +1,17 @@
+{
+  "targets": {
+    "default": {
+      "resources": {
+        "runtimes": {
+          "spoton": {
+            "runtimeId": "spoton_spoton-ofYrfc9nZC",
+            "runtimeArn": "arn:aws:bedrock-agentcore:us-east-1:209479307795:runtime/spoton_spoton-ofYrfc9nZC",
+            "roleArn": "arn:aws:iam::209479307795:role/AgentCore-spoton-default-ApplicationAgentSpotonRunt-F3TYhAqR3AWZ"
+          }
+        },
+        "stackName": "AgentCore-spoton-default",
+        "deployHash": "dd29dc3609ee654f"
+      }
+    }
+  }
+}
