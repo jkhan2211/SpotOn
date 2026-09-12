@@ -24,10 +24,17 @@ Diagram:
       Type: AWS::Amplify::App
       Title: "React Frontend (AWS Amplify)"
 
-    # FastAPI backend, hosted on AWS App Runner
+    # FastAPI backend, hosted on Amazon ECS Express Mode (Fargate).
+    # AWS App Runner was the original target, but it stopped accepting new
+    # customers on 2026-04-30 and "Create service" is disabled for this account.
+    # ECS Express Mode is the AWS-recommended replacement: a single API call
+    # provisions the Fargate service, an Application Load Balancer with TLS,
+    # autoscaling and networking. No dedicated Express Mode icon exists in the
+    # AWS icon set, so this uses the closest supported representation - the ECS
+    # Service icon - retitled, the same approach used for AgentCore Runtime below.
     Backend:
-      Type: AWS::AppRunner::Service
-      Title: "FastAPI API"
+      Type: AWS::ECS::Service
+      Title: "FastAPI (ECS Express)"
       Options:
         GroupingOffset: true
 
@@ -112,7 +119,7 @@ Diagram:
       TargetArrowHead:
         Type: Open
 
-    # React frontend (Amplify) -> FastAPI backend (App Runner)
+    # React frontend (Amplify) -> FastAPI backend (ECS Express Mode)
     - Source: Frontend
       SourcePosition: S
       Target: Backend

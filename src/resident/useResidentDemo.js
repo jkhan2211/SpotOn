@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { INITIAL_SPACES, INITIAL_MESSAGES, STATUS, SCENARIO } from './residentData';
+import { API_BASE } from '../apiBase';
 
 // One id per browser tab/session — not real auth, just how the backend knows which
 // resident-context + conversation belongs to this tab. Persists across reloads of the
@@ -48,7 +49,7 @@ export function useResidentDemo() {
 
   // ── fetch spaces from backend ─────────────────────────────────────────────
   const fetchSpaces = useCallback(() => {
-    fetch('http://localhost:8000/api/parking-spaces')
+    fetch(`${API_BASE}/api/parking-spaces`)
       .then(res => res.json())
       .then(data => setSpaces(data.spaces))
       .catch(err => console.error('Failed to fetch parking spaces:', err));
@@ -57,7 +58,7 @@ export function useResidentDemo() {
   // ── fetch active waitlist offers — no push/polling infra, so this runs at the same
   // natural sync points as fetchSpaces (mount, after chat, after release/accept/decline) ──
   const fetchOffers = useCallback(() => {
-    fetch(`http://localhost:8000/api/waitlist/offers?session_id=${encodeURIComponent(sessionId)}`)
+    fetch(`${API_BASE}/api/waitlist/offers?session_id=${encodeURIComponent(sessionId)}`)
       .then(res => res.json())
       .then(data => setOffers(data.offers || []))
       .catch(err => console.error('Failed to fetch waitlist offers:', err));
@@ -103,7 +104,7 @@ export function useResidentDemo() {
     const permitId = space?.current_permit_id || activePermits[spaceId]?.permitId;
     if (!permitId || isReleasing) return;
     setIsReleasing(true);
-    fetch(`http://localhost:8000/api/permits/${permitId}/release?timezone=${encodeURIComponent(timezone)}`, { method: 'POST' })
+    fetch(`${API_BASE}/api/permits/${permitId}/release?timezone=${encodeURIComponent(timezone)}`, { method: 'POST' })
       .then(res => res.json().then(data => ({ ok: res.ok, data })))
       .then(({ ok, data }) => {
         setIsReleasing(false);
@@ -132,7 +133,7 @@ export function useResidentDemo() {
   const acceptOffer = useCallback((waitlistId) => {
     if (offerActionId) return;
     setOfferActionId(waitlistId);
-    fetch(`http://localhost:8000/api/waitlist/${waitlistId}/accept?timezone=${encodeURIComponent(timezone)}`, { method: 'POST' })
+    fetch(`${API_BASE}/api/waitlist/${waitlistId}/accept?timezone=${encodeURIComponent(timezone)}`, { method: 'POST' })
       .then(res => res.json().then(data => ({ ok: res.ok, data })))
       .then(({ ok, data }) => {
         setOfferActionId(null);
@@ -164,8 +165,7 @@ export function useResidentDemo() {
 
   const declineOffer = useCallback((waitlistId) => {
     if (offerActionId) return;
-    setOfferActionId(waitlistId);
-    fetch(`http://localhost:8000/api/waitlist/${waitlistId}/decline`, { method: 'POST' })
+    fetch(`${API_BASE}/api/waitlist/${waitlistId}/decline`, { method: 'POST' })
       .then(res => res.json().then(data => ({ ok: res.ok, data })))
       .then(({ ok, data }) => {
         setOfferActionId(null);
@@ -236,7 +236,7 @@ export function useResidentDemo() {
 
     // ── fallback — hits real FastAPI backend ────────────────────────────────
     setIsTyping(true);
-    fetch('http://localhost:8000/api/chat', {
+    fetch(`${API_BASE}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: text, session_id: sessionId, timezone }),

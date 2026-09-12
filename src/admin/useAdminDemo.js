@@ -1,3 +1,5 @@
+import { API_BASE } from '../apiBase';
+
 import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   INITIAL_WAITLIST,
@@ -31,14 +33,14 @@ export function useAdminDemo() {
   const notifId = useRef(0);
 
   const fetchSpaces = useCallback(() => {
-    fetch('http://localhost:8000/api/parking-spaces')
+    fetch(`${API_BASE}/api/parking-spaces`)
       .then(res => res.json())
       .then(data => setSpaces(data.spaces || []))
       .catch(err => console.error('Failed to fetch parking spaces:', err));
   }, []);
 
   const fetchVehicleReports = useCallback(() => {
-    fetch('http://localhost:8000/api/admin/vehicle-reports')
+    fetch(`${API_BASE}/api/admin/vehicle-reports`)
       .then(res => res.json())
       .then(data => setVehicleReports(data.reports || []))
       .catch(err => console.error('Failed to fetch vehicle reports:', err));
@@ -108,7 +110,7 @@ export function useAdminDemo() {
     // messages — the agent itself (see agent/admin_agent.py) is what should decide
     // whether to ask a clarifying question or proceed, not a scripted string match.
     setIsTyping(true);
-    fetch('http://localhost:8000/api/admin/chat', {
+    fetch(`${API_BASE}/api/admin/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: text, session_id: adminSessionId }),
@@ -165,7 +167,7 @@ export function useAdminDemo() {
   const markExpected = useCallback((reportId) => {
     if (reportActionId) return;
     setReportActionId(reportId);
-    fetch(`http://localhost:8000/api/admin/vehicle-reports/${reportId}/expected`, { method: 'POST' })
+    fetch(`${API_BASE}/api/admin/vehicle-reports/${reportId}/expected`, { method: 'POST' })
       .then(res => res.json().then(data => ({ ok: res.ok, data })))
       .then(({ ok, data }) => {
         setReportActionId(null);
@@ -187,7 +189,7 @@ export function useAdminDemo() {
   const reportToSecurity = useCallback((reportId) => {
     if (reportActionId) return;
     setReportActionId(reportId);
-    fetch(`http://localhost:8000/api/admin/vehicle-reports/${reportId}/notify-security`, { method: 'POST' })
+    fetch(`${API_BASE}/api/admin/vehicle-reports/${reportId}/notify-security`, { method: 'POST' })
       .then(res => res.json().then(data => ({ ok: res.ok, data })))
       .then(({ ok, data }) => {
         setReportActionId(null);

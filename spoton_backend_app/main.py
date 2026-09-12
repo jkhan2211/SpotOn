@@ -1,3 +1,5 @@
+import os
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -23,12 +25,25 @@ _repo = get_repository()
 
 app = FastAPI(title="SpotOn API")
 
+# Browser origins allowed to call this API, as a comma-separated env var. The
+# default is the local React dev server, so local development is unchanged. In
+# ECS it is supplied as CORS_ALLOWED_ORIGINS — which is how the Amplify domain
+# gets added later by editing configuration instead of code.
+CORS_ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get(
+        "CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:5173"
+    ).split(",")
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173"],
+    allow_origins=CORS_ALLOWED_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 
 class ChatRequest(BaseModel):
@@ -45,6 +60,14 @@ class AdminChatRequest(BaseModel):
 @app.get("/")
 def root():
     return {"status": "SpotOn API running"}
+
+
+
+@app.get("/health")
+def health():
+    """Liveness probe for the ECS Express Mode health check.
+    """
+    return {"status": "ok"}
 
 
 @app.get("/api/parking-spaces")

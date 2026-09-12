@@ -1,0 +1,19 @@
+{
+  "image": "209479307795.dkr.ecr.us-east-1.amazonaws.com/spoton-backend:v2",
+  "containerPort": 8000,
+  "environment": [
+    { "name": "SPOTON_DATA_BACKEND", "value": "dynamodb" },
+    { "name": "AWS_REGION", "value": "us-east-1" },
+    { "name": "AGENTCORE_RUNTIME_ARN", "value": "arn:aws:bedrock-agentcore:us-east-1:209479307795:runtime/spoton_spoton-ofYrfc9nZC" },
+    { "name": "SPOTON_RESIDENTS_TABLE", "value": "spoton-residents" },
+    { "name": "SPOTON_VEHICLES_TABLE", "value": "spoton-vehicles" },
+    { "name": "SPOTON_SPACES_TABLE", "value": "spoton-spaces" },
+    { "name": "SPOTON_PERMITS_TABLE", "value": "spoton-permits" },
+    { "name": "SPOTON_WAITLIST_TABLE", "value": "spoton-waitlist" },
+    { "name": "SPOTON_VEHICLE_REPORTS_TABLE", "value": "spoton-vehicle-reports" },
+    { "name": "SPOTON_SES_FROM_EMAIL", "value": "mjunaidtestlabaws01@gmail.com" },
+    { "name": "SPOTON_SECURITY_EMAIL", "value": "mjunaidtestlabaws01+security@gmail.com" },
+    { "name": "SPOTON_EMAIL_MODE", "value": "live" },
+    { "name": "CORS_ALLOWED_ORIGINS", "value": "http://localhost:3000,http://localhost:5173" }
+  ]
+}

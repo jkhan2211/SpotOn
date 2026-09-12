@@ -192,7 +192,7 @@ service prefix, and its `PassRoleToBedrock` statement is conditioned on
 `bedrock-agentcore.amazonaws.com`. Attach `BedrockAgentCoreFullAccess` too.
 
 **Inline policies cap at 2048 non-whitespace characters across all inline policies on an
-identity.** Use customer-managed policies (6144 each, and reusable for the future App Runner role).
+identity.** Use customer-managed policies (6144 each, and reusable for the future ECS Express Mode task role).
 
 ## 14. `CDKToolkit` stack stuck
 
