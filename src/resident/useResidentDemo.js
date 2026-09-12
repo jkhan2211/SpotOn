@@ -187,53 +187,6 @@ export function useResidentDemo() {
   const sendMessage = useCallback((text) => {
     if (!text.trim()) return;
     addMsg('resident', text);
-    const lower = text.toLowerCase();
-
-    // ── Scenario 1: normal booking — routed to the real backend (see fallback below) ──
-    if (scenario === SCENARIO.IDLE) {
-      if (lower.includes('contractor') || lower.includes('blocking') || lower.includes('temporary') || lower.includes('temp')) {
-        setScenario(SCENARIO.TEMP_PARKING);
-        agentReply("I'll check the temporary resident parking policy and current capacity...", 800, { processing: true });
-        setTimeout(() => {
-          setIsTyping(false);
-          agentReply("Temporary resident parking has been approved until 6:00 PM in space V04.", 2400);
-          updateSpace('V04', { status: STATUS.RESERVED, ownerUnit: '14', visitor: 'Contractor', permit: 'SP-TEMP-01', until: '6:00 PM' });
-          setActivePermits(prev => ({ ...prev, V04: { type: 'temp', visitor: 'Contractor', space: 'V04', from: 'Now', until: '6:00 PM', plate: '—', status: 'Active' } }));
-          setScenario(SCENARIO.TEMP_CONFIRMED);
-          pushNotif('success', 'Temporary parking approved', 'Space V04 reserved until 6:00 PM');
-        }, 2600);
-        return;
-      }
-      if (lower.includes('7') && lower.includes('11')) {
-        setScenario(SCENARIO.ALT_TIME);
-        agentReply("The full 7–11 PM window isn't currently available. I found two compatible alternatives:", 1100, { alternatives: ['6:00–8:00 PM', '9:30–11:30 PM'] });
-        return;
-      }
-    }
-
-    // ── Scenario 5: extension ───────────────────────────────────────────────
-    if (scenario === SCENARIO.BOOKING_CONFIRMED && (lower.includes('extend') || lower.includes('two more') || lower.includes('another hour') || lower.includes('longer'))) {
-      setScenario(SCENARIO.EXTENSION_REQUEST);
-      agentReply("Checking extension policy and future parking availability...", 700, { processing: true });
-      setTimeout(() => {
-        setIsTyping(false);
-        setMessages(prev => [...prev, {
-          id: nextId(), role: 'agent', ts: now(),
-          text: "I can't extend the permit until 7:00 PM because the space is committed later. I can extend it until 5:30 PM.",
-          extensionOptions: ['5:30 PM'],
-        }]);
-        setScenario(SCENARIO.EXTENSION_CONFLICT);
-      }, 2200);
-      return;
-    }
-
-    // ── Scenario 7: alternative time ────────────────────────────────────────
-    if (scenario === SCENARIO.ALT_TIME) {
-      setScenario(SCENARIO.IDLE);
-      agentReply("Got it! I'll book that window for you. You'll receive a confirmation shortly.", 900);
-      return;
-    }
-
     // ── fallback — hits real FastAPI backend ────────────────────────────────
     setIsTyping(true);
     fetch(`${API_BASE}/api/chat`, {
@@ -269,7 +222,7 @@ export function useResidentDemo() {
         setIsTyping(false);
         addMsg('agent', "Sorry, I couldn't reach the SpotOn server. Please try again.");
       });
-  }, [scenario, addMsg, agentReply, pushNotif, updateSpace, fetchSpaces, fetchOffers]);
+    }, [addMsg, pushNotif, updateSpace, fetchSpaces, fetchOffers]);
 
   // ── quick actions ─────────────────────────────────────────────────────────
   const triggerQuickAction = useCallback((action) => {
