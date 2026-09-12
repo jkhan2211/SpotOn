@@ -72,7 +72,68 @@ Symptom: the very next `agentcore deploy` failed in **1.6s** with `Stack:...CDKT
 **10. The IDE silently left files at 0 bytes — twice** (`agentcore_app.py`, `agentcore.json`). An empty `.py` imports fine, so "it imported OK" was misleading. Fix: `wc -c` before trusting a file, and prefer a terminal heredoc for small config files.
 **11. npm `ETIMEDOUT` on `syscall read`** installing the CLI. The `read` syscall means DNS and TCP succeeded and bulk transfer stalled — so the "check your proxy" advice npm prints is aimed at the wrong layer. It succeeded on a plain retry; the MTU hypothesis was never confirmed and was moot.
 
-## The near-miss that didn't happen
+## The first failure of the deployed runtime
+
+**12. `ProfileNotFound` fired after all — by a route neither the bundle check nor the env config predicted.**
+Symptom: first `agentcore invoke` returned `Runtime initialization time exceeded... 30s`. CloudWatch (`/aws/bedrock-agentcore/runtimes/<id>-DEFAULT`) showed the real cause: `botocore.exceptions.ProfileNotFound: The config profile (spoton) could not be found`, raised at import time from `repositories/dynamodb_repository.py:42` where `boto3.resource()` runs at module level.
+
+Two hypotheses, both **wrong**: `.env` was genuinely absent from the zip *and* the staging dir, and `get-agent-runtime --query environmentVariables` listed exactly the 12 configured vars with no `AWS_PROFILE`. The variable was ambient in the developer's shell and got carried into the container by the build, where it is invisible to the runtime's `environmentVariables` config.
+
+Fix attempt 1 — `os.environ.pop("AWS_PROFILE", None)` before the SpotOn imports — **did not work**. Root cause from the installed source: `botocore/configprovider.py:73` reads `'profile': (None, ['AWS_DEFAULT_PROFILE', 'AWS_PROFILE'], None, None)` — **two** variables, with `AWS_DEFAULT_PROFILE` checked FIRST. Fix: pop both, before any module that builds a boto3 client at import time.
+
+**Three lessons:**
+- Verifying the *bundle* and the *runtime env config* are clean does **not** prove a variable is absent from the container. Build-time environment is a third, invisible channel.
+- `AWS_PROFILE` is not one variable. `AWS_DEFAULT_PROFILE` takes precedence over it.
+- **The traceback's line number proved which code was running.** The failing import moved from `agentcore_app.py:17` to `:23` after the redeploy, which ruled out "stale deployment" and pointed the investigation at the fix rather than the pipeline — saving a wasted deploy cycle. Always diff the line numbers across attempts.
+
+**A 30-second init timeout is rarely about speed.** A module-level exception looks identical to slowness from the outside: the container never becomes healthy, and the only signal is a generic timeout. Go straight to CloudWatch; the timeout message itself carries no diagnostic value. (Local import time was measured at 1.18s, which is how the "it's just slow" theory was ruled out early.)
+
+## The trap that DID fire — and why the check that cleared it was invalid
+
+**13. `agentcore package` does not produce the artifact that `agentcore deploy` ships.**
+This is the single most costly mistake of the deployment, and it invalidated an earlier "all clear".
+
+In Phase 16 the `.env`/`AWS_PROFILE` risk was declared neutralised because `unzip -l agentcore/spoton.zip` showed no `.env` and no `.venv` — checked twice, including an exhaustive dotfile search that found only `.gitignore` and `.lock`. **That zip was never what got deployed.** `agentcore/spoton.zip` stayed timestamped at the moment `agentcore package` ran and was untouched by five subsequent `agentcore deploy` runs; deploy builds its own bundle with its own inclusion rules, **and those rules include `.env`**.
+
+Proof came only from instrumenting the container itself — four `print(..., flush=True)` lines at the top of the entrypoint, which reported:
+```
+STARTUP AWS* = {AWS_REGION, AWS_DEFAULT_REGION, AWS_EXECUTION_ENV, AWS_DNS_SUFFIX, AWS_GENAI_CONTENT_EXTRACTION_OPT_OUT}
+HAS /var/task/.env = True      <-- the answer
+HAS ~/.aws = False
+AWS_CONFIG_FILE = None
+AFTER POP AWS* = {...unchanged...}
+```
+`AWS_PROFILE` was **not** in the container environment at startup — it was set *later*, by `load_dotenv(Path(__file__).parent.parent / ".env")` at `repositories/dynamodb_repository.py:40`, two lines before the `boto3.resource()` on line 42 that raised.
+
+**Fix: delete `AWS_PROFILE=spoton` from `spoton_backend_app/.env`** (root cause). Local dev is unaffected because it is already passed per-command — `spoton.sh:35` and every manual command used the `AWS_PROFILE=spoton` prefix.
+
+**Three wrong theories preceded the right one**, each disproved by measurement: (a) `.env` in the zip — the zip was clean but irrelevant; (b) `AWS_PROFILE` injected as a runtime env var — `get-agent-runtime --query environmentVariables` showed exactly the 12 configured vars; (c) popping `AWS_PROFILE` before the imports — ineffective, because `load_dotenv` runs *after* it, inside the import chain. Popping `AWS_DEFAULT_PROFILE` too (botocore reads both, `configprovider.py:73`) was also ineffective for the same reason, though the precedence fact is real and worth knowing.
+
+**Lessons:**
+- **Verify the artifact that actually ships, not a same-named artifact produced by a different command.** A stale timestamp on the thing you inspected is the tell.
+- When three theories fail, **stop theorising and instrument the running environment.** Four print statements and one deploy cycle produced certainty that hours of reasoning did not.
+- Ordering bugs beat placement fixes: a variable set by a *later* import cannot be removed by an *earlier* pop. Fix the source, not the symptom.
+- `os.environ.pop` guards that never fire are worse than no guard — they imply protection that does not exist. They were removed once the evidence showed `AWS_PROFILE` never reached the container environment.
+
+## RESOLVED — first successful deployed invocation
+
+2026-09-12 09:25 local. `agentcore invoke --prompt "Hi, I am in unit 9" --session-id <36-char uuid> --json` returned:
+
+```json
+{"message": "Hey Silvano! I've got you set up for Unit 9. How can I help you with parking today?",
+ "permit": null,
+ "resident": {"resident_id": "2", "unit_number": "9", "first_name": "Silvano", ...}}
+```
+
+**The single fix that closed it: deleting `AWS_PROFILE=spoton` from `spoton_backend_app/.env`.** `.env` still ships into the container — that was never changed — but it no longer carries anything harmful, so `load_dotenv` is benign and boto3 falls through to the default credential chain and finds the execution role.
+
+Confirmed working in one call: container boot and full import chain, **Bedrock via the execution role** (the agent reasoned), **DynamoDB via the execution role** (`identify_resident` read `spoton-residents`), the three-field response contract across the runtime boundary, and `permit: null` rather than `{}`.
+
+**Note for the boto3 client (Phase 20):** the CLI's `--json` output nests the agent's reply as a **JSON string** inside the `response` field — `"response": "{\n  \"message\": ...}"`. So `invoke_agent_runtime` returns bytes containing JSON that must be `json.loads`-ed, not a pre-parsed dict. The FastAPI client has to decode twice: transport payload, then the agent's own JSON.
+
+Total: 7 deploy attempts to get infrastructure up, then 6 runtime versions to get the process to boot. **The application code was never the problem** — `agentcore_app.py` was written once and the only change it ever received was removing debug scaffolding.
+
+## Appendix: the bundle inspection that looked reassuring
 
 The `.env` / `AWS_PROFILE` trap tracked since Phase 2 — `.env` getting zipped, `load_dotenv` setting `AWS_PROFILE=spoton` in the container, boto3 failing `ProfileNotFound` instead of falling back to the execution role. **`agentcore package` proved the bundle excludes both `.env` and `.venv`.** Worth writing up anyway as the failure that was designed out rather than debugged: it would have failed inside CloudWatch with nothing in the source code to point at the cause.
 

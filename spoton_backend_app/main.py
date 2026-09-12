@@ -5,15 +5,16 @@ import agent.spoton_agent as agent_module
 import agent.admin_agent as admin_agent_module
 from repositories import get_repository
 from tools.parking_tools import (
-    last_created_permit,
     release_permit,
     get_waitlist_offers,
     accept_waitlist_offer,
     decline_waitlist_offer,
     set_current_session,
-    get_current_resident,
+    _set_current_resident,
     clear_all_sessions,
 )
+from services.agentcore_client import invoke_agent, AgentCoreError
+
 from tools.vehicle_reports import get_vehicle_reports, mark_expected, notify_security
 
 # All persistence goes through this — CSV today, pluggable later (see
@@ -76,22 +77,27 @@ def parking_spaces():
 
 @app.post("/api/chat")
 def chat(req: ChatRequest):
-    last_created_permit.clear()
+    try:
+        result = invoke_agent("resident", req.message, req.session_id, req.timezone)
+    except AgentCoreError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+
+    # Mirror the resolved resident back into FastAPI's own session store.
+    # GET /api/waitlist/offers calls get_waitlist_offers(), a PLAIN function that
+    # reads _SESSIONS directly — it is not a Strands tool and never runs inside
+    # AgentCore. Without this line it would return {"offers": []} forever, with
+    # HTTP 200 and no error anywhere. That kills the OfferBanner demo silently.
     set_current_session(req.session_id, req.timezone)
-    agent = agent_module.get_agent_for_session(req.session_id, req.timezone)
-    response = agent(req.message)
-    return {
-        "message": str(response),
-        "permit": dict(last_created_permit) if last_created_permit else None,
-        "resident": get_current_resident(),
-    }
+    _set_current_resident(result.get("resident"))
+
+    return result
 
 
 @app.post("/api/chat/reset")
 def reset_chat():
     agent_module.reset_all_sessions()
     clear_all_sessions()
-    return {"success": True, "message": "All sessions and conversation memory have been reset."}
+    return {"success": True, "message": "Cleared FastAPI's cached resident context. Conversation memory lives in AgentCore and resets with a new session_id."}
 
 
 @app.post("/api/permits/{permit_id}/release")
@@ -132,15 +138,17 @@ def waitlist_decline(waitlist_id: str):
 
 @app.post("/api/admin/chat")
 def admin_chat(req: AdminChatRequest):
-    agent = admin_agent_module.get_admin_agent_for_session(req.session_id)
-    response = agent(req.message)
-    return {"message": str(response)}
+    try:
+        return invoke_agent("admin", req.message, req.session_id)
+    except AgentCoreError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+
 
 
 @app.post("/api/admin/chat/reset")
 def admin_chat_reset():
     admin_agent_module.reset_all_admin_sessions()
-    return {"success": True, "message": "Admin conversation memory has been reset."}
+    return {"success": True, "message": "Admin conversation memory lives in AgentCore and resets with a new session_id."}
 
 
 @app.get("/api/admin/vehicle-reports")

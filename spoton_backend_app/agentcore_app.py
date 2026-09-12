@@ -7,7 +7,6 @@ the same JSON shape those routes already return to React.
 
 Run locally:  uv run python agentcore_app.py   (serves 0.0.0.0:8080)
 """
-
 import logging
 
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
@@ -19,6 +18,8 @@ from tools.parking_tools import (
     set_current_session,
     get_current_resident,
 )
+
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("spoton.agentcore")
