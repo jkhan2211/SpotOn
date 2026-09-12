@@ -30,7 +30,7 @@
         { "name": "SPOTON_VEHICLE_REPORTS_TABLE", "value": "spoton-vehicle-reports" },
         { "name": "SPOTON_SES_FROM_EMAIL", "value": "mjunaidtestlabaws01@gmail.com" },
         { "name": "SPOTON_SECURITY_EMAIL", "value": "mjunaidtestlabaws01+security@gmail.com" },
-        { "name": "SPOTON_EMAIL_MODE", "value": "mock" }
+        { "name": "SPOTON_EMAIL_MODE", "value": "live" }
       ]
     }
   ],
