@@ -1,0 +1,40 @@
+{
+  "$schema": "https://schema.agentcore.aws.dev/v1/agentcore.json",
+  "name": "spoton",
+  "version": 1,
+  "managedBy": "CDK",
+  "tags": {
+    "agentcore:created-by": "agentcore-cli",
+    "agentcore:project-name": "spoton"
+  },
+  "runtimes": [
+    {
+      "name": "spoton",
+      "description": "SpotOn resident and admin parking agents (Strands)",
+      "build": "CodeZip",
+      "entrypoint": "agentcore_app.py",
+      "codeLocation": "spoton_backend_app/",
+      "runtimeVersion": "PYTHON_3_13",
+      "networkMode": "PUBLIC",
+      "protocol": "HTTP",
+      "additionalPolicies": ["spoton-runtime-policy.json"],
+      "envVars": [
+        { "name": "SPOTON_DATA_BACKEND", "value": "dynamodb" },
+        { "name": "AWS_REGION", "value": "us-east-1" },
+        { "name": "SPOTON_MODEL_ID", "value": "global.anthropic.claude-sonnet-4-6" },
+        { "name": "SPOTON_RESIDENTS_TABLE", "value": "spoton-residents" },
+        { "name": "SPOTON_VEHICLES_TABLE", "value": "spoton-vehicles" },
+        { "name": "SPOTON_SPACES_TABLE", "value": "spoton-spaces" },
+        { "name": "SPOTON_PERMITS_TABLE", "value": "spoton-permits" },
+        { "name": "SPOTON_WAITLIST_TABLE", "value": "spoton-waitlist" },
+        { "name": "SPOTON_VEHICLE_REPORTS_TABLE", "value": "spoton-vehicle-reports" },
+        { "name": "SPOTON_SES_FROM_EMAIL", "value": "mjunaidtestlabaws01@gmail.com" },
+        { "name": "SPOTON_SECURITY_EMAIL", "value": "mjunaidtestlabaws01+security@gmail.com" },
+        { "name": "SPOTON_EMAIL_MODE", "value": "mock" }
+      ]
+    }
+  ],
+  "memories": [], "knowledgeBases": [], "credentials": [], "evaluators": [],
+  "onlineEvalConfigs": [], "agentCoreGateways": [], "policyEngines": [],
+  "configBundles": [], "abTests": [], "harnesses": [], "datasets": [], "payments": []
+}
