@@ -32,6 +32,8 @@ printf "reports to review: "; AWS_PROFILE=spoton aws dynamodb scan --table-name 
   --region us-east-1 --query 'length(Items[?status.S==`requires_review`])' --output text
 ```
 
+⚠️ **When editing rows by hand with `aws dynamodb update-item`, always add `--condition-expression "attribute_exists(<key>)"`.** Without it, a mistyped or placeholder id silently **creates a new, incomplete row**. On 2026-09-13 a cleanup command run with the placeholder `WL-XXXXXX` created a waitlist row with only `waitlist_id` and `status`; `GET /api/waitlist/offers` then raised `KeyError: 'resident_id'` (HTTP 500) for every identified resident, so the OfferBanner never appeared even though the offer existed.
+
 **Want: 10 available, 0 waiting, 0 to review.** Expired `waiting` rows are harmless (the match skips them). The seeder never touches vehicle reports, so any report still needing review survives a reseed and keeps showing in the admin review strip: decide it from the dashboard (**Mark as Expected**), which also reopens its space.
 
 ⚠️ The seeder **overwrites by id and never deletes**, so permits and vehicle reports created during testing remain as orphans. Harmless — `check_parking_availability` reads only the spaces table's `status` — but it means the permits table grows.
