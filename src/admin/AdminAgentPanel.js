@@ -3,10 +3,6 @@ import '../resident/AgentPanel.css';
 
 const QUICK_ACTIONS = [
   { key: 'vehicles', label: '⚠ Review unknown vehicles' },
-  { key: 'capacity', label: '🅿 Show current capacity'  },
-  { key: 'waitlist', label: '⏳ Show waitlist'           },
-  { key: 'activity', label: '📋 Recent agent actions'   },
-  { key: 'policy',   label: '📄 Review parking policy'  },
 ];
 
 function TypingIndicator() {
@@ -40,39 +36,6 @@ function Message({ msg }) {
                   </div>
                 ))}
               <span className="inline-permit-card__status">✓ Permit Verified</span>
-            </div>
-          )}
-
-          {/* Waitlist data */}
-          {msg.waitlistData && (
-            <div className="admin-msg-list">
-              {msg.waitlistData.map(w => (
-                <div key={w.id} className="admin-msg-list__item">
-                  <span className="admin-msg-list__id">{w.id}</span>
-                  <span>Unit {w.unit} · {w.from}–{w.until}</span>
-                  <span className="admin-msg-list__status">{w.status}</span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Activity feed */}
-          {msg.activityFeed && (
-            <div className="admin-msg-list">
-              {msg.activityFeed.map((a, i) => (
-                <div key={i} className="admin-msg-list__item admin-msg-list__item--activity">
-                  <span className="admin-msg-list__ts">{a.ts}</span>
-                  <span>{a.text}</span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Policy card */}
-          {msg.policyCard && (
-            <div className="admin-policy-card">
-              <span className="admin-policy-card__label">Community Policy</span>
-              <p className="admin-policy-card__text">{msg.policyCard.text}</p>
             </div>
           )}
         </div>
@@ -141,7 +104,7 @@ export default function AdminAgentPanel({ messages, isTyping, onSend, onQuickAct
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={handleKey}
-          placeholder="Ask SpotOn about parking activity, vehicles, or policy..."
+          placeholder="Report a vehicle, e.g. Unknown vehicle in V08, plate ZZZ999"
           aria-label="Message SpotOn Admin Agent"
         />
         <button className="agent-panel__send" onClick={handleSend}

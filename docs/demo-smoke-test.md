@@ -139,17 +139,21 @@ Throughout: no CORS errors in Console, no `localhost` in any request URL.
 
 Neither is a bug; both are architectural consequences worth knowing rather than discovering on camera.
 
-## ⚠️ QUICK-ACTION BUTTONS — do not click these two on camera
+## Quick-action buttons — every remaining chip is backed by the real system
 
-The resident chat's quick-action chips are **not all backed by the real system**:
+Both dashboards originally shipped chips and keyword intercepts that answered from hardcoded mock data without reaching the agent. All of them have been removed.
 
-| Button | Backed by backend? | Notes |
-| --- | --- | --- |
-| 🚗 Book visitor parking | **YES** | sends `"My brother Alex is coming from 2-5 PM."` to the agent — a canned prompt, but a real booking |
-| 🔓 Release a space | **YES** | calls `releasePermit()` -> ECS -> DynamoDB |
-| ⏱ **Extend a visit** | **NO — frontend theatre** | `useResidentDemo.js:292-305` and `confirmExtension` at :387 use hardcoded strings and `setTimeout`. **No fetch, no ECS, no DynamoDB.** Also hardcodes the name **"Alex"**. Refreshing the page makes the "extension" vanish. |
-| 🕐 Demo: no-show reminder | likely theatre | `onQuickAction('noshow')` — same pattern |
+**Resident** (removed in 6f50da9): "Extend a visit" and "Demo: no-show reminder" were frontend theatre (hardcoded strings + `setTimeout`, no fetch; there is no extend tool in the agent). The keyword intercepts in `sendMessage` were also deleted. Remaining chips:
 
-**There is no extend tool in the agent** (the seven tools are identify_resident, check_parking_availability, create_permit, get_resident_vehicles, create_temporary_resident_permit, get_permit_status, join_waitlist), so the UI offers a capability the system does not have.
+| Button | What it does |
+| --- | --- |
+| 🚗 Book visitor parking | sends `"My brother Alex is coming from 2-5 PM."` to the agent — a canned prompt, but a real booking |
+| 🔓 Release a space | calls `releasePermit()` -> ECS -> DynamoDB |
 
-**Decision: AVOID DURING DEMO.** Cleaning it up (removing the chip, or wiring a real extend flow) is post-submission work — it does not block anything, but a judge clicking "Extend a visit" would see fabricated state.
+**Admin** (removed 2026-09-13, before the screenshot run):
+
+- **Chips removed:** "Show current capacity", "Show waitlist", "Recent agent actions" and "Review parking policy" answered from `INITIAL_WAITLIST` / `INITIAL_ACTIVITY` / `POLICIES` in `adminData.js`.
+- **Keyword intercepts removed:** `sendMessage` hijacked any message containing `full`, `capacity`, `available`, `how many`, `waitlist`, `waiting`, `recent`, `activity`, `done`, `actions`, `log`, `policy`, `no-show`, `noshow`, `grace` or `rule`, and replied with mock data instead of calling `/api/admin/chat`. A natural phrasing like "log this plate" never reached the agent.
+- **"Waitlisted" counter removed:** the stat above the admin site plan always showed **2** (the length of the mock list). The backend has no admin waitlist endpoint, so the counter was removed rather than adding one and redeploying ECS the day before submission.
+
+Only **⚠ Review unknown vehicles** remains; it counts real `requires_review` reports. Every typed admin message now goes to the real agent.

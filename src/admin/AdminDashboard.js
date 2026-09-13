@@ -43,7 +43,6 @@ export default function AdminDashboard() {
             selectedSpace={demo.selectedSpace}
             onSelectSpace={(s) => demo.setSelectedSpace(prev => prev?.id === s?.id ? null : s)}
             vehicleReports={demo.vehicleReports}
-            waitlistCount={demo.waitlist.length}
             reviewCount={pendingReview}
             onMarkExpected={demo.markExpected}
             onReportToSecurity={demo.reportToSecurity}

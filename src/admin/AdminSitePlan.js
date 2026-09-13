@@ -268,7 +268,7 @@ function Legend() {
 }
 
 // ─── Capacity summary ─────────────────────────────────────────────────────────
-function CapacityBar({ spaces, waitlistCount, reviewCount }) {
+function CapacityBar({ spaces, reviewCount }) {
   const total     = spaces.length;
   const available = spaces.filter(s => s.status === ADMIN_STATUS.AVAILABLE).length;
   const allocated = total - available;
@@ -279,10 +279,6 @@ function CapacityBar({ spaces, waitlistCount, reviewCount }) {
         <div className="admin-stat">
           <span className="admin-stat__val">{allocated}<span className="admin-stat__total">/{total}</span></span>
           <span className="admin-stat__label">Allocated</span>
-        </div>
-        <div className="admin-stat">
-          <span className="admin-stat__val">{waitlistCount}</span>
-          <span className="admin-stat__label">Waitlisted</span>
         </div>
         <div className={`admin-stat${reviewCount > 0 ? ' admin-stat--warn' : ''}`}>
           <span className="admin-stat__val">{reviewCount}</span>
@@ -300,7 +296,7 @@ function CapacityBar({ spaces, waitlistCount, reviewCount }) {
 
 // ─── Main AdminSitePlan ───────────────────────────────────────────────────────
 export default function AdminSitePlan({
-  spaces, selectedSpace, onSelectSpace, vehicleReports = [], waitlistCount = 0, reviewCount = 0,
+  spaces, selectedSpace, onSelectSpace, vehicleReports = [], reviewCount = 0,
   onMarkExpected, onReportToSecurity, reportActionId,
 }) {
   const [localSelected, setLocalSelected] = useState(null);
@@ -322,7 +318,7 @@ export default function AdminSitePlan({
         <Legend />
       </div>
 
-      <CapacityBar spaces={spaces} waitlistCount={waitlistCount} reviewCount={reviewCount} />
+      <CapacityBar spaces={spaces} reviewCount={reviewCount} />
 
       <div className="community-plan" aria-label="Admin community site plan">
         <LandscapeEdge label="Maple Grove Drive" trees={4} />
