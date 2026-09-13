@@ -4,8 +4,6 @@ import './AgentPanel.css';
 const QUICK_ACTIONS = [
   { key: 'book',    label: '🚗 Book visitor parking' },
   { key: 'release', label: '🔓 Release a space' },
-  { key: 'extend',  label: '⏱ Extend a visit' },
-  { key: 'temp',    label: '🔧 Temporary parking' },
 ];
 
 function TypingIndicator() {
@@ -151,9 +149,6 @@ export default function AgentPanel({
             {a.label}
           </button>
         ))}
-        <button className="chip chip--demo" onClick={() => onQuickAction('noshow')} aria-label="Demo: no-show reminder">
-          🔔 No-show reminder
-        </button>
       </div>
 
       {/* Input */}

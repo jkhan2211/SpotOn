@@ -79,6 +79,27 @@ def _set_current_resident(resident: dict | None) -> None:
     _SESSIONS.setdefault(_current_session_id, {})["resident"] = resident
 
 
+def set_session_resident(session_id: str, resident: dict | None, tz_name: str | None = None) -> None:
+    """Record which resident a browser session identified as, for FastAPI.
+
+    FastAPI serves many requests at once on worker threads, so it must not go through
+    set_current_session() + _set_current_resident(): another request can change the
+    module-level current session in between and one visitor's identity lands in someone
+    else's session. (Inside AgentCore each microVM serves a single session, so the tools'
+    implicit current session is safe there.) A None resident never clears a session that
+    was already identified: it only means the agent's own memory was recycled.
+    """
+    session = _SESSIONS.setdefault(session_id, {"resident": None, "timezone": None})
+    if resident is not None:
+        session["resident"] = resident
+    if tz_name:
+        session["timezone"] = tz_name
+
+
+def get_session_resident(session_id: str) -> dict | None:
+    return _SESSIONS.get(session_id, {}).get("resident")
+
+
 def clear_all_sessions() -> None:
     """Used by /api/chat/reset for a full operator wipe during testing."""
     _SESSIONS.clear()

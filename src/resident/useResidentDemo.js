@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { INITIAL_SPACES, INITIAL_MESSAGES, STATUS, SCENARIO } from './residentData';
+import { API_BASE } from '../apiBase';
 
 // One id per browser tab/session — not real auth, just how the backend knows which
 // resident-context + conversation belongs to this tab. Persists across reloads of the
@@ -48,7 +49,7 @@ export function useResidentDemo() {
 
   // ── fetch spaces from backend ─────────────────────────────────────────────
   const fetchSpaces = useCallback(() => {
-    fetch('http://localhost:8000/api/parking-spaces')
+    fetch(`${API_BASE}/api/parking-spaces`)
       .then(res => res.json())
       .then(data => setSpaces(data.spaces))
       .catch(err => console.error('Failed to fetch parking spaces:', err));
@@ -57,7 +58,7 @@ export function useResidentDemo() {
   // ── fetch active waitlist offers — no push/polling infra, so this runs at the same
   // natural sync points as fetchSpaces (mount, after chat, after release/accept/decline) ──
   const fetchOffers = useCallback(() => {
-    fetch(`http://localhost:8000/api/waitlist/offers?session_id=${encodeURIComponent(sessionId)}`)
+    fetch(`${API_BASE}/api/waitlist/offers?session_id=${encodeURIComponent(sessionId)}`)
       .then(res => res.json())
       .then(data => setOffers(data.offers || []))
       .catch(err => console.error('Failed to fetch waitlist offers:', err));
@@ -103,7 +104,8 @@ export function useResidentDemo() {
     const permitId = space?.current_permit_id || activePermits[spaceId]?.permitId;
     if (!permitId || isReleasing) return;
     setIsReleasing(true);
-    fetch(`http://localhost:8000/api/permits/${permitId}/release?timezone=${encodeURIComponent(timezone)}`, { method: 'POST' })
+        
+    fetch(`${API_BASE}/api/permits/${permitId}/release?timezone=${encodeURIComponent(timezone)}&session_id=${encodeURIComponent(sessionId)}`, { method: 'POST' })
       .then(res => res.json().then(data => ({ ok: res.ok, data })))
       .then(({ ok, data }) => {
         setIsReleasing(false);
@@ -132,7 +134,7 @@ export function useResidentDemo() {
   const acceptOffer = useCallback((waitlistId) => {
     if (offerActionId) return;
     setOfferActionId(waitlistId);
-    fetch(`http://localhost:8000/api/waitlist/${waitlistId}/accept?timezone=${encodeURIComponent(timezone)}`, { method: 'POST' })
+    fetch(`${API_BASE}/api/waitlist/${waitlistId}/accept?timezone=${encodeURIComponent(timezone)}&session_id=${encodeURIComponent(sessionId)}`, { method: 'POST' })
       .then(res => res.json().then(data => ({ ok: res.ok, data })))
       .then(({ ok, data }) => {
         setOfferActionId(null);
@@ -164,8 +166,7 @@ export function useResidentDemo() {
 
   const declineOffer = useCallback((waitlistId) => {
     if (offerActionId) return;
-    setOfferActionId(waitlistId);
-    fetch(`http://localhost:8000/api/waitlist/${waitlistId}/decline`, { method: 'POST' })
+    fetch(`${API_BASE}/api/waitlist/${waitlistId}/decline?session_id=${encodeURIComponent(sessionId)}`, { method: 'POST' })
       .then(res => res.json().then(data => ({ ok: res.ok, data })))
       .then(({ ok, data }) => {
         setOfferActionId(null);
@@ -187,56 +188,9 @@ export function useResidentDemo() {
   const sendMessage = useCallback((text) => {
     if (!text.trim()) return;
     addMsg('resident', text);
-    const lower = text.toLowerCase();
-
-    // ── Scenario 1: normal booking — routed to the real backend (see fallback below) ──
-    if (scenario === SCENARIO.IDLE) {
-      if (lower.includes('contractor') || lower.includes('blocking') || lower.includes('temporary') || lower.includes('temp')) {
-        setScenario(SCENARIO.TEMP_PARKING);
-        agentReply("I'll check the temporary resident parking policy and current capacity...", 800, { processing: true });
-        setTimeout(() => {
-          setIsTyping(false);
-          agentReply("Temporary resident parking has been approved until 6:00 PM in space V04.", 2400);
-          updateSpace('V04', { status: STATUS.RESERVED, ownerUnit: '14', visitor: 'Contractor', permit: 'SP-TEMP-01', until: '6:00 PM' });
-          setActivePermits(prev => ({ ...prev, V04: { type: 'temp', visitor: 'Contractor', space: 'V04', from: 'Now', until: '6:00 PM', plate: '—', status: 'Active' } }));
-          setScenario(SCENARIO.TEMP_CONFIRMED);
-          pushNotif('success', 'Temporary parking approved', 'Space V04 reserved until 6:00 PM');
-        }, 2600);
-        return;
-      }
-      if (lower.includes('7') && lower.includes('11')) {
-        setScenario(SCENARIO.ALT_TIME);
-        agentReply("The full 7–11 PM window isn't currently available. I found two compatible alternatives:", 1100, { alternatives: ['6:00–8:00 PM', '9:30–11:30 PM'] });
-        return;
-      }
-    }
-
-    // ── Scenario 5: extension ───────────────────────────────────────────────
-    if (scenario === SCENARIO.BOOKING_CONFIRMED && (lower.includes('extend') || lower.includes('two more') || lower.includes('another hour') || lower.includes('longer'))) {
-      setScenario(SCENARIO.EXTENSION_REQUEST);
-      agentReply("Checking extension policy and future parking availability...", 700, { processing: true });
-      setTimeout(() => {
-        setIsTyping(false);
-        setMessages(prev => [...prev, {
-          id: nextId(), role: 'agent', ts: now(),
-          text: "I can't extend the permit until 7:00 PM because the space is committed later. I can extend it until 5:30 PM.",
-          extensionOptions: ['5:30 PM'],
-        }]);
-        setScenario(SCENARIO.EXTENSION_CONFLICT);
-      }, 2200);
-      return;
-    }
-
-    // ── Scenario 7: alternative time ────────────────────────────────────────
-    if (scenario === SCENARIO.ALT_TIME) {
-      setScenario(SCENARIO.IDLE);
-      agentReply("Got it! I'll book that window for you. You'll receive a confirmation shortly.", 900);
-      return;
-    }
-
     // ── fallback — hits real FastAPI backend ────────────────────────────────
     setIsTyping(true);
-    fetch('http://localhost:8000/api/chat', {
+    fetch(`${API_BASE}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: text, session_id: sessionId, timezone }),
@@ -269,7 +223,7 @@ export function useResidentDemo() {
         setIsTyping(false);
         addMsg('agent', "Sorry, I couldn't reach the SpotOn server. Please try again.");
       });
-  }, [scenario, addMsg, agentReply, pushNotif, updateSpace, fetchSpaces, fetchOffers]);
+    }, [addMsg, pushNotif, updateSpace, fetchSpaces, fetchOffers]);
 
   // ── quick actions ─────────────────────────────────────────────────────────
   const triggerQuickAction = useCallback((action) => {

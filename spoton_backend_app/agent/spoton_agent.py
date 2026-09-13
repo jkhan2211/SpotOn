@@ -1,3 +1,4 @@
+import os
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from strands import Agent
@@ -10,6 +11,10 @@ from tools.parking_tools import (
     get_permit_status,
     join_waitlist,
 )
+# Bedrock inference profile. Overridable per environment so the deployed runtime
+# can be pointed at a different model without a code change.
+MODEL_ID = os.environ.get("SPOTON_MODEL_ID", "global.anthropic.claude-sonnet-4-6")
+
 
 SYSTEM_PROMPT = (
     "You are SpotOn, a community parking assistant. You handle two kinds of requests: "
@@ -141,7 +146,8 @@ def create_agent(tz_name: str = "UTC") -> Agent:
         "ask whether they meant a still-upcoming time today, tomorrow, or a different date.\n\n"
         f"{SYSTEM_PROMPT}"
     )
-    return Agent(system_prompt=prompt, tools=TOOLS)
+    return Agent(model=MODEL_ID, system_prompt=prompt, tools=TOOLS)
+
 
 
 # One Agent instance per browser session (keyed by the frontend-generated session_id) —

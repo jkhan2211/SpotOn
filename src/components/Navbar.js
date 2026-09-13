@@ -15,6 +15,7 @@ export default function Navbar() {
           <span className="navbar__name">SpotOn</span>
         </Link>
         <nav aria-label="Main navigation">
+          {/* eslint-disable-next-line jsx-a11y/no-redundant-roles -- list-style:none strips the implicit list role in Safari/VoiceOver */}
           <ul className="navbar__links" role="list">
             <li>
               <Link

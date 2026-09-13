@@ -1,0 +1,17 @@
+# Local virtualenv — the image builds its own from uv.lock. Hundreds of MB.
+.venv/
+
+# Local configuration. MUST NOT ship. This file is exactly how AWS_PROFILE reached
+# the AgentCore container and broke execution-role credentials with ProfileNotFound.
+# Config is injected at runtime instead.
+.env
+.env.*
+
+# Bytecode compiled by a different interpreter
+__pycache__/
+*.py[cod]
+
+# Not needed by the running API
+.gitignore
+Dockerfile
+.dockerignore

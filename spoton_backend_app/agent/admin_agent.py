@@ -1,3 +1,4 @@
+import os
 from strands import Agent
 from tools.vehicle_reports import report_and_check_vehicle
 
@@ -43,11 +44,14 @@ SYSTEM_PROMPT = (
 )
 
 TOOLS = [report_and_check_vehicle]
+MODEL_ID = os.environ.get("SPOTON_MODEL_ID", "global.anthropic.claude-sonnet-4-6")
+
 
 
 def create_admin_agent() -> Agent:
     """Builds a fresh Agent with no conversation history."""
-    return Agent(system_prompt=SYSTEM_PROMPT, tools=TOOLS)
+    return Agent(model=MODEL_ID, system_prompt=SYSTEM_PROMPT, tools=TOOLS)
+
 
 
 # One Agent instance per admin session, same reasoning as the resident agent: keeps

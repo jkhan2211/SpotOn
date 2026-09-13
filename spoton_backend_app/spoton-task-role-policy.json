@@ -1,0 +1,39 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "InvokeSpotOnAgentCoreRuntime",
+      "Effect": "Allow",
+      "Action": ["bedrock-agentcore:InvokeAgentRuntime"],
+      "Resource": [
+        "arn:aws:bedrock-agentcore:us-east-1:209479307795:runtime/spoton_spoton-ofYrfc9nZC",
+        "arn:aws:bedrock-agentcore:us-east-1:209479307795:runtime/spoton_spoton-ofYrfc9nZC/*"
+      ]
+    },
+    {
+      "Sid": "SpotOnDynamoDBData",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+        "dynamodb:UpdateItem",
+        "dynamodb:Query",
+        "dynamodb:Scan"
+      ],
+      "Resource": [
+        "arn:aws:dynamodb:us-east-1:209479307795:table/spoton-residents",
+        "arn:aws:dynamodb:us-east-1:209479307795:table/spoton-vehicles",
+        "arn:aws:dynamodb:us-east-1:209479307795:table/spoton-spaces",
+        "arn:aws:dynamodb:us-east-1:209479307795:table/spoton-permits",
+        "arn:aws:dynamodb:us-east-1:209479307795:table/spoton-waitlist",
+        "arn:aws:dynamodb:us-east-1:209479307795:table/spoton-vehicle-reports"
+      ]
+    },
+    {
+      "Sid": "SpotOnSESSend",
+      "Effect": "Allow",
+      "Action": ["ses:SendEmail"],
+      "Resource": ["arn:aws:ses:us-east-1:209479307795:identity/mjunaidtestlabaws01@gmail.com"]
+    }
+  ]
+}

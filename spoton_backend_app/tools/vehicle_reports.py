@@ -163,6 +163,25 @@ def get_vehicle_reports() -> dict:
     return {"reports": _repo.get_vehicle_reports()}
 
 
+def reopen_cleared_spaces() -> list[str]:
+    """Return spaces flagged "unknown" to "available" once no report needing review is
+    left for them. Plain function, not a Strands tool.
+
+    report_and_check_vehicle() flags an available space whenever a vehicle is reported
+    there, even when the plate matched a resident or permit, and nothing else ever
+    clears that flag. The API calls this after admin chats and admin decisions, so a
+    flagged space can always be recovered from the dashboard instead of staying
+    offline until the data is reseeded.
+    """
+    open_spaces = {r["space_id"] for r in _repo.get_vehicle_reports() if r["status"] == "requires_review"}
+    reopened = []
+    for space in _repo.get_spaces():
+        if space["status"] == "unknown" and space["space_id"] not in open_spaces:
+            _repo.update_space(space["space_id"], status="available")
+            reopened.append(space["space_id"])
+    return reopened
+
+
 def mark_expected(report_id: str) -> dict:
     """Deterministic UI action (Mark as Expected button) — plain function, not a
     Strands tool. Pure human acknowledgement: does not touch the space, does not

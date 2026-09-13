@@ -1,49 +1,179 @@
-from fastapi import FastAPI, HTTPException
+import logging
+import os
+from typing import Annotated
+from zoneinfo import ZoneInfo
+
+from fastapi import Depends, FastAPI, HTTPException, Path, Query, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-import agent.spoton_agent as agent_module
-import agent.admin_agent as admin_agent_module
+from fastapi.responses import JSONResponse
+from pydantic import AfterValidator, BaseModel, StringConstraints
+
 from repositories import get_repository
 from tools.parking_tools import (
-    last_created_permit,
     release_permit,
     get_waitlist_offers,
     accept_waitlist_offer,
     decline_waitlist_offer,
-    set_current_session,
-    get_current_resident,
-    clear_all_sessions,
+    set_session_resident,
+    get_session_resident,
+
 )
-from tools.vehicle_reports import get_vehicle_reports, mark_expected, notify_security
+from services.agentcore_client import invoke_agent, AgentCoreError
+from services.rate_limits import LimitExceeded, agent_slot, check_agent_quota, check_request_rate
+
+
+from tools.vehicle_reports import get_vehicle_reports, mark_expected, notify_security, reopen_cleared_spaces
+
+logger = logging.getLogger("spoton.api")
 
 # All persistence goes through this — CSV today, pluggable later (see
 # repositories/). Routes below never read/write a CSV path directly.
 _repo = get_repository()
 
-app = FastAPI(title="SpotOn API")
+# No public API explorer: /docs, /redoc and /openapi.json would list every endpoint,
+# including admin and email-sending ones, with a "Try it out" button.
+def _api_rate_limit(request: Request) -> None:
+    # Coarse per-IP ceiling on every /api route. /health stays exempt for the ECS check.
+    if request.url.path.startswith("/api/"):
+        check_request_rate(request)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+
+app = FastAPI(
+    title="SpotOn API",
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
+    dependencies=[Depends(_api_rate_limit)],
 )
 
 
+# Browser origins allowed to call this API, as a comma-separated env var. The
+# default is the local React dev server, so local development is unchanged. In
+# ECS it is supplied as CORS_ALLOWED_ORIGINS — which is how the Amplify domain
+# gets added later by editing configuration instead of code.
+CORS_ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get(
+        "CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:5173"
+    ).split(",")
+    if origin.strip()
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=CORS_ALLOWED_ORIGINS,
+    # Only what the React app sends: GET and POST with a JSON body. No cookies are used,
+    # so credentials stay disabled (the default).
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
+
+)
+
+
+
+# ── Request limits ────────────────────────────────────────────────────────────────
+# The API is public, so every value a caller controls is bounded here — before any
+# DynamoDB read, AgentCore invocation or email. Real browser traffic is far below these.
+MAX_BODY_BYTES = 16 * 1024               # a real chat request is well under 1 KB
+MAX_MESSAGE_CHARS = 1000                 # ~250 tokens; typed demo messages are much shorter
+SESSION_ID_PATTERN = r"^[A-Za-z0-9-]+$"  # React sends crypto.randomUUID() (36 chars)
+
+
+@app.middleware("http")
+async def limit_request_body(request: Request, call_next):
+    length = request.headers.get("content-length")
+    too_large = length is not None and (not length.isdigit() or int(length) > MAX_BODY_BYTES)
+    chunked = "chunked" in request.headers.get("transfer-encoding", "").lower()
+    if too_large or chunked:
+        return JSONResponse({"detail": "Request body too large."}, status_code=413)
+    return await call_next(request)
+
+@app.exception_handler(LimitExceeded)
+async def limit_exceeded(request: Request, exc: LimitExceeded):
+    # "message" is the field both chat panels render, so a limited visitor sees why
+    # instead of an empty reply bubble.
+    return JSONResponse(
+        {"detail": exc.message, "message": exc.message},
+        status_code=429,
+        headers={"Retry-After": str(exc.retry_after)},
+    )
+
+
+
+@app.exception_handler(RequestValidationError)
+async def invalid_request(request: Request, exc: RequestValidationError):
+    # FastAPI's default 422 echoes the rejected input back (up to the 16 KB body limit) along
+    # with parser internals. Say only which field failed and why.
+    problems = "; ".join(
+        f"{'.'.join(str(p) for p in err.get('loc', ()) if not isinstance(p, int) and p not in ('body', 'query', 'path')) or 'request'}: "
+        f"{err.get('msg', 'invalid value')}"
+        for err in exc.errors()[:3]
+    )
+    message = f"Invalid request ({problems})." if problems else "Invalid request."
+    return JSONResponse({"detail": message, "message": message}, status_code=422)
+
+
+_AGENT_UNAVAILABLE = "SpotOn couldn't complete that request right now. Please try again in a moment."
+
+
+def _agent_unavailable(exc: AgentCoreError) -> JSONResponse:
+    # The real error can contain AWS error codes, role and runtime ARNs, or the agent's own
+    # exception text and file paths. It goes to the server log; the caller gets a generic
+    # message, in the "message" field the chat panels render.
+    logger.error("agent call failed: %s", exc)
+    return JSONResponse({"detail": _AGENT_UNAVAILABLE, "message": _AGENT_UNAVAILABLE}, status_code=502)
+
+
+def _safe_timezone(tz_name: str | None) -> str:
+    """The browser-reported zone is written into the agent's system prompt, so only a
+    real IANA zone name gets through; anything else becomes UTC."""
+    if not tz_name or len(tz_name) > 64:
+        return "UTC"
+    try:
+        ZoneInfo(tz_name)
+    except Exception:
+        return "UTC"
+    return tz_name
+
+
+Message = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_MESSAGE_CHARS)]
+SessionId = Annotated[str, StringConstraints(min_length=32, max_length=64, pattern=SESSION_ID_PATTERN)]
+Timezone = Annotated[str, AfterValidator(_safe_timezone)]
+
+# Ids are generated server-side (see tools/); anything in another shape cannot exist,
+# so it is rejected before it reaches DynamoDB as a key.
+PermitId = Annotated[str, Path(pattern=r"^SP-[0-9A-F]{6}$")]
+WaitlistId = Annotated[str, Path(pattern=r"^WL-[0-9A-F]{6}$")]
+ReportId = Annotated[str, Path(pattern=r"^UV-[0-9A-F]{6}$")]
+SessionQuery = Annotated[str, Query(min_length=32, max_length=64, pattern=SESSION_ID_PATTERN)]
+
+
+
 class ChatRequest(BaseModel):
-    message: str
-    session_id: str = "default"
-    timezone: str = "UTC"  # browser-reported IANA zone, e.g. "America/Toronto"
+    message: Message
+    session_id: SessionId
+    timezone: Timezone = "UTC"  # browser-reported IANA zone, e.g. "America/Toronto"
 
 
 class AdminChatRequest(BaseModel):
-    message: str
-    session_id: str = "admin-default"
+    message: Message
+    session_id: SessionId
+
+
 
 
 @app.get("/")
 def root():
     return {"status": "SpotOn API running"}
+
+
+
+@app.get("/health")
+def health():
+    """Liveness probe for the ECS Express Mode health check.
+    """
+    return {"status": "ok"}
 
 
 @app.get("/api/parking-spaces")
@@ -73,43 +203,88 @@ def parking_spaces():
         })
     return {"spaces": spaces}
 
+# The browser only displays first_name and unit_number. The full resident record
+# (resident_id, last name, email) stays server-side for waitlist offers and email,
+# and must never be returned to an anonymous caller.
+_PUBLIC_RESIDENT_FIELDS = ("first_name", "unit_number")
 
-@app.post("/api/chat")
-def chat(req: ChatRequest):
-    last_created_permit.clear()
-    set_current_session(req.session_id, req.timezone)
-    agent = agent_module.get_agent_for_session(req.session_id, req.timezone)
-    response = agent(req.message)
+
+def _public_chat_response(result: dict) -> dict:
+    resident = result.get("resident")
+    permit = result.get("permit")
     return {
-        "message": str(response),
-        "permit": dict(last_created_permit) if last_created_permit else None,
-        "resident": get_current_resident(),
+        "message": result.get("message"),
+        "resident": {k: resident[k] for k in _PUBLIC_RESIDENT_FIELDS if k in resident} if resident else None,
+        "permit": {k: v for k, v in permit.items() if k != "resident_email"} if permit else None,
     }
 
 
-@app.post("/api/chat/reset")
-def reset_chat():
-    agent_module.reset_all_sessions()
-    clear_all_sessions()
-    return {"success": True, "message": "All sessions and conversation memory have been reset."}
+
+@app.post("/api/chat")
+def chat(req: ChatRequest, request: Request):
+    try:
+        with agent_slot():
+            check_agent_quota(request, req.session_id)
+            result = invoke_agent("resident", req.message, req.session_id, req.timezone)
+    except AgentCoreError as exc:
+        return _agent_unavailable(exc)
+
+
+    # Mirror the resolved resident back into FastAPI's own session store.
+    # GET /api/waitlist/offers calls get_waitlist_offers(), a PLAIN function that
+    # reads _SESSIONS directly — it is not a Strands tool and never runs inside
+    # AgentCore. Without this line it would return {"offers": []} forever, with
+    # HTTP 200 and no error anywhere. That kills the OfferBanner demo silently.
+    set_session_resident(req.session_id, result.get("resident"), req.timezone)
+
+
+    return _public_chat_response(result)
+
+
+# ── Ownership ────────────────────────────────────────────────────────────────────
+# Permit and waitlist ids are visible to everyone (GET /api/parking-spaces lists them),
+# so knowing an id proves nothing. A change is allowed only from the browser session
+# that identified as the resident who owns the record. Unit-number identity is still
+# not real authentication, but this stops one-request changes to other people's bookings.
+
+def _require_owner(session_id: str, resident_id: str | None) -> None:
+    resident = get_session_resident(session_id)
+    if resident is None:
+        raise HTTPException(status_code=403, detail="Tell SpotOn your unit number first, then try again.")
+    if resident_id != resident["resident_id"]:
+        raise HTTPException(status_code=403, detail="You can only change your own bookings.")
+
+
+def _require_waitlist_owner(waitlist_id: str, session_id: str) -> None:
+    entry = _repo.get_waitlist_entry(waitlist_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail=f"No waitlist entry found with id {waitlist_id}.")
+    _require_owner(session_id, entry.get("resident_id"))
 
 
 @app.post("/api/permits/{permit_id}/release")
-def release(permit_id: str, timezone: str | None = None):
-    result = release_permit(permit_id, tz_name=timezone)
+def release(permit_id: PermitId, session_id: SessionQuery, timezone: str | None = None):
+    permit = _repo.get_permit(permit_id)
+    if permit is None:
+        raise HTTPException(status_code=404, detail=f"No permit found with id {permit_id}.")
+    _require_owner(session_id, permit.get("resident_id"))
+    result = release_permit(permit_id, tz_name=_safe_timezone(timezone))
     if result.get("error") == "not_found":
         raise HTTPException(status_code=404, detail=result["message"])
     return result
 
 
+
+
 @app.get("/api/waitlist/offers")
-def waitlist_offers(session_id: str = "default"):
+def waitlist_offers(session_id: SessionQuery):
     return get_waitlist_offers(session_id)
 
 
 @app.post("/api/waitlist/{waitlist_id}/accept")
-def waitlist_accept(waitlist_id: str, timezone: str | None = None):
-    result = accept_waitlist_offer(waitlist_id, tz_name=timezone)
+def waitlist_accept(waitlist_id: WaitlistId, session_id: SessionQuery, timezone: str | None = None):
+    _require_waitlist_owner(waitlist_id, session_id)
+    result = accept_waitlist_offer(waitlist_id, tz_name=_safe_timezone(timezone))
     if result.get("error") == "not_found":
         raise HTTPException(status_code=404, detail=result["message"])
     if "error" in result:
@@ -118,11 +293,14 @@ def waitlist_accept(waitlist_id: str, timezone: str | None = None):
 
 
 @app.post("/api/waitlist/{waitlist_id}/decline")
-def waitlist_decline(waitlist_id: str):
+def waitlist_decline(waitlist_id: WaitlistId, session_id: SessionQuery):
+    _require_waitlist_owner(waitlist_id, session_id)
     result = decline_waitlist_offer(waitlist_id)
     if result.get("error") == "not_found":
         raise HTTPException(status_code=404, detail=result["message"])
     return result
+
+
 
 
 # ── Admin / Security — unknown vehicle reports ────────────────────────────────────
@@ -131,16 +309,18 @@ def waitlist_decline(waitlist_id: str):
 # explicit human UI decisions and deliberately do NOT go through Strands at all.
 
 @app.post("/api/admin/chat")
-def admin_chat(req: AdminChatRequest):
-    agent = admin_agent_module.get_admin_agent_for_session(req.session_id)
-    response = agent(req.message)
-    return {"message": str(response)}
+def admin_chat(req: AdminChatRequest, request: Request):
+    try:
+        with agent_slot():
+            check_agent_quota(request, req.session_id)
+            result = invoke_agent("admin", req.message, req.session_id)
+    except AgentCoreError as exc:
+        return _agent_unavailable(exc)
+
+    reopen_cleared_spaces()
+    return result
 
 
-@app.post("/api/admin/chat/reset")
-def admin_chat_reset():
-    admin_agent_module.reset_all_admin_sessions()
-    return {"success": True, "message": "Admin conversation memory has been reset."}
 
 
 @app.get("/api/admin/vehicle-reports")
@@ -149,16 +329,20 @@ def admin_vehicle_reports():
 
 
 @app.post("/api/admin/vehicle-reports/{report_id}/expected")
-def admin_vehicle_report_expected(report_id: str):
+def admin_vehicle_report_expected(report_id: ReportId):
     result = mark_expected(report_id)
     if result.get("error") == "not_found":
         raise HTTPException(status_code=404, detail=result["message"])
+    reopen_cleared_spaces()
     return result
+
 
 
 @app.post("/api/admin/vehicle-reports/{report_id}/notify-security")
-def admin_vehicle_report_notify_security(report_id: str):
+def admin_vehicle_report_notify_security(report_id: ReportId):
     result = notify_security(report_id)
     if result.get("error") == "not_found":
         raise HTTPException(status_code=404, detail=result["message"])
+    reopen_cleared_spaces()
     return result
+
