@@ -42,4 +42,4 @@ EXPOSE 8000
 # --host 0.0.0.0 is mandatory in a container: binding 127.0.0.1 makes the app
 # unreachable from outside, and the ALB health check would fail with an
 # "unhealthy task" loop that looks like an application bug.
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--no-server-header"]

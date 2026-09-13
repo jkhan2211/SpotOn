@@ -1,8 +1,10 @@
+import logging
 import os
 from typing import Annotated
 from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, HTTPException, Path, Query, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import AfterValidator, BaseModel, StringConstraints
@@ -22,6 +24,8 @@ from services.rate_limits import LimitExceeded, agent_slot, check_agent_quota, c
 
 
 from tools.vehicle_reports import get_vehicle_reports, mark_expected, notify_security, reopen_cleared_spaces
+
+logger = logging.getLogger("spoton.api")
 
 # All persistence goes through this — CSV today, pluggable later (see
 # repositories/). Routes below never read/write a CSV path directly.
@@ -92,6 +96,30 @@ async def limit_exceeded(request: Request, exc: LimitExceeded):
         headers={"Retry-After": str(exc.retry_after)},
     )
 
+
+
+@app.exception_handler(RequestValidationError)
+async def invalid_request(request: Request, exc: RequestValidationError):
+    # FastAPI's default 422 echoes the rejected input back (up to the 16 KB body limit) along
+    # with parser internals. Say only which field failed and why.
+    problems = "; ".join(
+        f"{'.'.join(str(p) for p in err.get('loc', ()) if not isinstance(p, int) and p not in ('body', 'query', 'path')) or 'request'}: "
+        f"{err.get('msg', 'invalid value')}"
+        for err in exc.errors()[:3]
+    )
+    message = f"Invalid request ({problems})." if problems else "Invalid request."
+    return JSONResponse({"detail": message, "message": message}, status_code=422)
+
+
+_AGENT_UNAVAILABLE = "SpotOn couldn't complete that request right now. Please try again in a moment."
+
+
+def _agent_unavailable(exc: AgentCoreError) -> JSONResponse:
+    # The real error can contain AWS error codes, role and runtime ARNs, or the agent's own
+    # exception text and file paths. It goes to the server log; the caller gets a generic
+    # message, in the "message" field the chat panels render.
+    logger.error("agent call failed: %s", exc)
+    return JSONResponse({"detail": _AGENT_UNAVAILABLE, "message": _AGENT_UNAVAILABLE}, status_code=502)
 
 
 def _safe_timezone(tz_name: str | None) -> str:
@@ -196,7 +224,8 @@ def chat(req: ChatRequest, request: Request):
             check_agent_quota(request, req.session_id)
             result = invoke_agent("resident", req.message, req.session_id, req.timezone)
     except AgentCoreError as exc:
-        raise HTTPException(status_code=502, detail=str(exc))
+        return _agent_unavailable(exc)
+
 
     # Mirror the resolved resident back into FastAPI's own session store.
     # GET /api/waitlist/offers calls get_waitlist_offers(), a PLAIN function that
@@ -283,7 +312,8 @@ def admin_chat(req: AdminChatRequest, request: Request):
             check_agent_quota(request, req.session_id)
             result = invoke_agent("admin", req.message, req.session_id)
     except AgentCoreError as exc:
-        raise HTTPException(status_code=502, detail=str(exc))
+        return _agent_unavailable(exc)
+
     reopen_cleared_spaces()
     return result
 
