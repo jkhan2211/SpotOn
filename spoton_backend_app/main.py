@@ -3,8 +3,6 @@ import os
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import agent.spoton_agent as agent_module
-import agent.admin_agent as admin_agent_module
 from repositories import get_repository
 from tools.parking_tools import (
     release_permit,
@@ -13,7 +11,6 @@ from tools.parking_tools import (
     decline_waitlist_offer,
     set_current_session,
     _set_current_resident,
-    clear_all_sessions,
 )
 from services.agentcore_client import invoke_agent, AgentCoreError
 
@@ -23,7 +20,10 @@ from tools.vehicle_reports import get_vehicle_reports, mark_expected, notify_sec
 # repositories/). Routes below never read/write a CSV path directly.
 _repo = get_repository()
 
-app = FastAPI(title="SpotOn API")
+# No public API explorer: /docs, /redoc and /openapi.json would list every endpoint,
+# including admin and email-sending ones, with a "Try it out" button.
+app = FastAPI(title="SpotOn API", docs_url=None, redoc_url=None, openapi_url=None)
+
 
 # Browser origins allowed to call this API, as a comma-separated env var. The
 # default is the local React dev server, so local development is unchanged. In
@@ -97,6 +97,22 @@ def parking_spaces():
         })
     return {"spaces": spaces}
 
+# The browser only displays first_name and unit_number. The full resident record
+# (resident_id, last name, email) stays server-side for waitlist offers and email,
+# and must never be returned to an anonymous caller.
+_PUBLIC_RESIDENT_FIELDS = ("first_name", "unit_number")
+
+
+def _public_chat_response(result: dict) -> dict:
+    resident = result.get("resident")
+    permit = result.get("permit")
+    return {
+        "message": result.get("message"),
+        "resident": {k: resident[k] for k in _PUBLIC_RESIDENT_FIELDS if k in resident} if resident else None,
+        "permit": {k: v for k, v in permit.items() if k != "resident_email"} if permit else None,
+    }
+
+
 
 @app.post("/api/chat")
 def chat(req: ChatRequest):
@@ -113,14 +129,7 @@ def chat(req: ChatRequest):
     set_current_session(req.session_id, req.timezone)
     _set_current_resident(result.get("resident"))
 
-    return result
-
-
-@app.post("/api/chat/reset")
-def reset_chat():
-    agent_module.reset_all_sessions()
-    clear_all_sessions()
-    return {"success": True, "message": "Cleared FastAPI's cached resident context. Conversation memory lives in AgentCore and resets with a new session_id."}
+    return _public_chat_response(result)
 
 
 @app.post("/api/permits/{permit_id}/release")
@@ -166,12 +175,6 @@ def admin_chat(req: AdminChatRequest):
     except AgentCoreError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
 
-
-
-@app.post("/api/admin/chat/reset")
-def admin_chat_reset():
-    admin_agent_module.reset_all_admin_sessions()
-    return {"success": True, "message": "Admin conversation memory lives in AgentCore and resets with a new session_id."}
 
 
 @app.get("/api/admin/vehicle-reports")
