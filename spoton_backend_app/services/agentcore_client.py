@@ -4,14 +4,15 @@ This is the only module that knows AgentCore exists. FastAPI routes call
 invoke_agent() and get back the same dict shape the in-process agents used to
 return, so React's contract is unchanged.
 """
-
 import hashlib
 import json
 import os
 from pathlib import Path
 
 import boto3
+from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
+
 from dotenv import load_dotenv
 
 # Same pattern as repositories/ and email_service.py — config resolves at import,
@@ -24,7 +25,12 @@ QUALIFIER = os.environ.get("AGENTCORE_QUALIFIER", "DEFAULT")
 _client = boto3.client(
     "bedrock-agentcore",
     region_name=os.environ.get("AWS_REGION", "us-east-1"),
+    # One attempt only: invoke_agent_runtime is not idempotent, so a botocore retry can
+    # repeat a booking (and its emails) and bills the model twice. read_timeout stays
+    # under the load balancer's 60 s idle timeout, after which the browser has given up.
+    config=Config(connect_timeout=5, read_timeout=55, retries={"total_max_attempts": 1, "mode": "standard"}),
 )
+
 
 # botocore's SessionType shape enforces 33..256 characters client-side.
 _MIN_SESSION_LEN = 33

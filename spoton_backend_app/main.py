@@ -17,6 +17,7 @@ from tools.parking_tools import (
     _set_current_resident,
 )
 from services.agentcore_client import invoke_agent, AgentCoreError
+from services.rate_limits import LimitExceeded, agent_slot, check_agent_quota
 
 from tools.vehicle_reports import get_vehicle_reports, mark_expected, notify_security
 
@@ -66,6 +67,17 @@ async def limit_request_body(request: Request, call_next):
     if too_large or chunked:
         return JSONResponse({"detail": "Request body too large."}, status_code=413)
     return await call_next(request)
+
+@app.exception_handler(LimitExceeded)
+async def limit_exceeded(request: Request, exc: LimitExceeded):
+    # "message" is the field both chat panels render, so a limited visitor sees why
+    # instead of an empty reply bubble.
+    return JSONResponse(
+        {"detail": exc.message, "message": exc.message},
+        status_code=429,
+        headers={"Retry-After": str(exc.retry_after)},
+    )
+
 
 
 def _safe_timezone(tz_name: str | None) -> str:
@@ -162,9 +174,11 @@ def _public_chat_response(result: dict) -> dict:
 
 
 @app.post("/api/chat")
-def chat(req: ChatRequest):
+def chat(req: ChatRequest, request: Request):
     try:
-        result = invoke_agent("resident", req.message, req.session_id, req.timezone)
+        with agent_slot():
+            check_agent_quota(request, req.session_id)
+            result = invoke_agent("resident", req.message, req.session_id, req.timezone)
     except AgentCoreError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
 
@@ -216,9 +230,11 @@ def waitlist_decline(waitlist_id: WaitlistId):
 # explicit human UI decisions and deliberately do NOT go through Strands at all.
 
 @app.post("/api/admin/chat")
-def admin_chat(req: AdminChatRequest):
+def admin_chat(req: AdminChatRequest, request: Request):
     try:
-        return invoke_agent("admin", req.message, req.session_id)
+        with agent_slot():
+            check_agent_quota(request, req.session_id)
+            return invoke_agent("admin", req.message, req.session_id)
     except AgentCoreError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
 
