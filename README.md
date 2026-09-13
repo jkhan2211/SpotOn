@@ -4,7 +4,7 @@ SpotOn is an AI agent that runs visitor parking for a residential community. Res
 
 It is built with [Strands Agents](https://strandsagents.com), runs on **Amazon Bedrock AgentCore Runtime**, and is deployed end to end on AWS.
 
-**Live demo:** https://main.d1eyelfeh8f8tj.amplifyapp.com (resident portal at `/resident`, admin dashboard at `/admin`). It's a shared public demo with usage limits and fictional data; see [Public demo safeguards](#public-demo-safeguards).
+**Live demo:** https://main.d1eyelfeh8f8tj.amplifyapp.com (resident portal at `/resident`, admin dashboard at `/admin`). It's a shared public demo with usage limits and fictional data. **Step-by-step testing instructions: [Test the live demo](#test-the-live-demo).**
 
 ![SpotOn architecture](docs/spoton-architecture.png)
 
@@ -148,15 +148,66 @@ Step-by-step notes, including every deployment error hit and how it was fixed:
 - [ECS Express Mode deployment notes](docs/ecs-express-deployment-notes.md)
 - [End-to-end demo test plan](docs/demo-smoke-test.md)
 
-## Try the demo
+## Test the live demo
 
-| Try | Unit / plate | What happens |
+No sign-up, login or install is needed. Open **https://main.d1eyelfeh8f8tj.amplifyapp.com** in a desktop browser and type the messages below exactly as shown.
+
+Good to know before you start:
+- The **first reply can take about 10 seconds** while the agent starts; later replies take a few seconds.
+- The demo is **shared**: other testers' bookings may appear on the site plan. Please release your own bookings when you're done.
+- Confirmation emails are sent to the demo owner's inbox, so you won't receive them.
+- **Switch Unit** (in the resident portal header, next to "SpotOn Active") appears once you've told SpotOn your unit, and starts a fresh conversation as a different resident. If you haven't identified yet, skip that click and just type the unit message.
+
+### 1. Book visitor parking (about 2 minutes)
+
+1. Open **https://main.d1eyelfeh8f8tj.amplifyapp.com/resident**
+2. Type `Hi, I'm in unit 9`: SpotOn greets **Silvano**.
+3. Type `My friend Sam is visiting tomorrow from 6 to 8 PM, plate SAM303`: SpotOn books a space, confirms the details, and the space turns **Reserved** on the site plan.
+4. Click that space on the site plan, then **Release Early**: the space becomes available again.
+
+### 2. Temporary parking for a resident's own car (about 2 minutes)
+
+1. Click **Switch Unit**, then type `Hi, I'm in unit 14`: SpotOn greets **Netty**.
+2. Type `My driveway is being repaved, I need to park my own car tomorrow from 9 AM to 5 PM`: Netty has two registered cars, so SpotOn **asks which vehicle**.
+3. Type `ADM424`: SpotOn creates a temporary resident permit for that car.
+4. Click the reserved space, then **Release Early** to clean up.
+
+### 3. Rules the agent enforces (about 1 minute)
+
+1. Click **Switch Unit**, then type `Hi, I'm in unit 6`: SpotOn explains that this unit's parking privileges are disabled and **refuses to book**.
+2. Click **Switch Unit**, type `Hi, I'm in unit 99`: SpotOn asks you to double-check the unit and **doesn't invent a resident**.
+3. If the site plan shows a space booked by another tester, click it, then **Release Early**: you get **"You can only change your own bookings."**
+
+### 4. Admin: review an unknown vehicle (about 2 minutes)
+
+1. Open **https://main.d1eyelfeh8f8tj.amplifyapp.com/admin**
+2. Type `Unknown vehicle in V08, plate ZZZ999`: SpotOn finds **no matching resident vehicle or permit**, and V08 is flagged for review.
+3. In the **⚠ Needs Review** strip under the site plan, click **V08**, then **Mark as Expected** or **Report to Security**: the decision is recorded and **V08 becomes available again**. SpotOn never makes this decision itself.
+4. Type `Check plate ADM424 in space V04`: SpotOn **matches the plate to a registered vehicle for unit 14**, so nothing is flagged.
+
+### 5. Optional: waitlist and automatic re-offer (about 5 minutes)
+
+This needs a full lot, so it works best when few other people are testing.
+
+1. On **/resident**, click **Switch Unit** and type `Hi, I'm in unit 14`.
+2. Book visitors one after another (for example `My cousin Dev is visiting tomorrow from 6 to 8 PM, plate DEV101`, changing the name and plate each time) until SpotOn says **no spaces are available**.
+3. When it offers the waitlist, type `Yes, please add me to the waitlist`.
+4. Click one of **your** reserved spaces on the site plan, then **Release Early**: SpotOn automatically offers that space to the waitlisted request, and an **offer banner** appears. If it doesn't appear, refresh the page.
+5. Click **Accept**: the space is booked for the waitlisted visitor.
+6. Please release your remaining bookings when you're done.
+
+### Quick reference
+
+| Try | Unit / plate | Expected |
 |---|---|---|
-| Visitor booking | Unit **14** or **9** | Books a space and sends a confirmation |
-| Temporary resident parking | Unit **14** | Asks which of the resident's registered vehicles to use |
-| Parking disabled | Unit **6** | Politely refuses; the unit's parking privileges are disabled |
-| Admin: matched plate | `ADM424` | Matches a registered resident vehicle (unit 14) |
+| Visitor booking | Unit **9** or **14** | Books a space and confirms it |
+| Temporary parking for your own car | Unit **14** | Asks which registered vehicle (`ADM424` or `CJI606`) |
+| Parking privileges disabled | Unit **6** | Politely refuses |
+| Unknown unit | Unit **99** | Asks you to double-check |
+| Admin: matched plate | `ADM424` | Matches a registered vehicle (unit 14) |
 | Admin: unknown plate | `ZZZ999` | No match; flagged for human review |
+
+If you see a "please try again later" message, you've hit one of the demo's usage limits; see [Public demo safeguards](#public-demo-safeguards).
 
 ## Public demo safeguards
 
@@ -180,12 +231,12 @@ See [the demo test plan](docs/demo-smoke-test.md#live-demo-safeguards-backend-v3
 - **AI assistance:** developed primarily with Claude Code as an AI coding assistant. The logo and landing page components were created with the help of AI generation tools.
 - **Demo data:** all residents, vehicles, plates and permits are fictional, generated with [Mockaroo](https://www.mockaroo.com/).
 
-## Known limitations
+## Prototype scope
 
-This is a hackathon prototype, not a production system:
-- **No real sign-in.** Residents are identified by unit number, so anyone who claims a unit can act as that resident. The admin dashboard is intentionally open so it can be explored.
-- **Offers aren't pushed.** The page refreshes its data after actions instead of receiving live updates.
-- **Some policies aren't built yet:** permit extensions, automatic no-show release, and per-resident caps on bookings or waitlist entries.
-- **Limits are in-memory.** They reset when the backend restarts and are exact only while it runs a single task.
+SpotOn is a hackathon prototype. A few things are deliberately simplified:
 
-> All residents, units, vehicles, plates and permits are fictional demo data. Please don't enter real personal information in the demo.
+- **Sign-in:** residents identify themselves by unit number instead of logging in, and the admin dashboard is open so you can explore it.
+- **Offers:** when a space opens up, refresh the page to see a waitlist offer (there are no live push updates yet).
+- **Not built yet:** permit extensions, automatic no-show release, and per-resident booking limits.
+
+> All residents, units, vehicles, plates and permits are fictional. Please don't enter real personal information in the live demo.
