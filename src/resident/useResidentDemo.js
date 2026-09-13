@@ -104,7 +104,8 @@ export function useResidentDemo() {
     const permitId = space?.current_permit_id || activePermits[spaceId]?.permitId;
     if (!permitId || isReleasing) return;
     setIsReleasing(true);
-    fetch(`${API_BASE}/api/permits/${permitId}/release?timezone=${encodeURIComponent(timezone)}`, { method: 'POST' })
+        
+    fetch(`${API_BASE}/api/permits/${permitId}/release?timezone=${encodeURIComponent(timezone)}&session_id=${encodeURIComponent(sessionId)}`, { method: 'POST' })
       .then(res => res.json().then(data => ({ ok: res.ok, data })))
       .then(({ ok, data }) => {
         setIsReleasing(false);
@@ -133,7 +134,7 @@ export function useResidentDemo() {
   const acceptOffer = useCallback((waitlistId) => {
     if (offerActionId) return;
     setOfferActionId(waitlistId);
-    fetch(`${API_BASE}/api/waitlist/${waitlistId}/accept?timezone=${encodeURIComponent(timezone)}`, { method: 'POST' })
+    fetch(`${API_BASE}/api/waitlist/${waitlistId}/accept?timezone=${encodeURIComponent(timezone)}&session_id=${encodeURIComponent(sessionId)}`, { method: 'POST' })
       .then(res => res.json().then(data => ({ ok: res.ok, data })))
       .then(({ ok, data }) => {
         setOfferActionId(null);
@@ -165,7 +166,7 @@ export function useResidentDemo() {
 
   const declineOffer = useCallback((waitlistId) => {
     if (offerActionId) return;
-    fetch(`${API_BASE}/api/waitlist/${waitlistId}/decline`, { method: 'POST' })
+    fetch(`${API_BASE}/api/waitlist/${waitlistId}/decline?session_id=${encodeURIComponent(sessionId)}`, { method: 'POST' })
       .then(res => res.json().then(data => ({ ok: res.ok, data })))
       .then(({ ok, data }) => {
         setOfferActionId(null);

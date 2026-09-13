@@ -2,7 +2,7 @@ import os
 from typing import Annotated
 from zoneinfo import ZoneInfo
 
-from fastapi import FastAPI, HTTPException, Path, Query, Request
+from fastapi import Depends, FastAPI, HTTPException, Path, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import AfterValidator, BaseModel, StringConstraints
@@ -13,13 +13,15 @@ from tools.parking_tools import (
     get_waitlist_offers,
     accept_waitlist_offer,
     decline_waitlist_offer,
-    set_current_session,
-    _set_current_resident,
+    set_session_resident,
+    get_session_resident,
+
 )
 from services.agentcore_client import invoke_agent, AgentCoreError
-from services.rate_limits import LimitExceeded, agent_slot, check_agent_quota
+from services.rate_limits import LimitExceeded, agent_slot, check_agent_quota, check_request_rate
 
-from tools.vehicle_reports import get_vehicle_reports, mark_expected, notify_security
+
+from tools.vehicle_reports import get_vehicle_reports, mark_expected, notify_security, reopen_cleared_spaces
 
 # All persistence goes through this — CSV today, pluggable later (see
 # repositories/). Routes below never read/write a CSV path directly.
@@ -27,7 +29,19 @@ _repo = get_repository()
 
 # No public API explorer: /docs, /redoc and /openapi.json would list every endpoint,
 # including admin and email-sending ones, with a "Try it out" button.
-app = FastAPI(title="SpotOn API", docs_url=None, redoc_url=None, openapi_url=None)
+def _api_rate_limit(request: Request) -> None:
+    # Coarse per-IP ceiling on every /api route. /health stays exempt for the ECS check.
+    if request.url.path.startswith("/api/"):
+        check_request_rate(request)
+
+
+app = FastAPI(
+    title="SpotOn API",
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
+    dependencies=[Depends(_api_rate_limit)],
+)
 
 
 # Browser origins allowed to call this API, as a comma-separated env var. The
@@ -101,6 +115,8 @@ Timezone = Annotated[str, AfterValidator(_safe_timezone)]
 PermitId = Annotated[str, Path(pattern=r"^SP-[0-9A-F]{6}$")]
 WaitlistId = Annotated[str, Path(pattern=r"^WL-[0-9A-F]{6}$")]
 ReportId = Annotated[str, Path(pattern=r"^UV-[0-9A-F]{6}$")]
+SessionQuery = Annotated[str, Query(min_length=32, max_length=64, pattern=SESSION_ID_PATTERN)]
+
 
 
 class ChatRequest(BaseModel):
@@ -187,27 +203,55 @@ def chat(req: ChatRequest, request: Request):
     # reads _SESSIONS directly — it is not a Strands tool and never runs inside
     # AgentCore. Without this line it would return {"offers": []} forever, with
     # HTTP 200 and no error anywhere. That kills the OfferBanner demo silently.
-    set_current_session(req.session_id, req.timezone)
-    _set_current_resident(result.get("resident"))
+    set_session_resident(req.session_id, result.get("resident"), req.timezone)
+
 
     return _public_chat_response(result)
 
 
+# ── Ownership ────────────────────────────────────────────────────────────────────
+# Permit and waitlist ids are visible to everyone (GET /api/parking-spaces lists them),
+# so knowing an id proves nothing. A change is allowed only from the browser session
+# that identified as the resident who owns the record. Unit-number identity is still
+# not real authentication, but this stops one-request changes to other people's bookings.
+
+def _require_owner(session_id: str, resident_id: str | None) -> None:
+    resident = get_session_resident(session_id)
+    if resident is None:
+        raise HTTPException(status_code=403, detail="Tell SpotOn your unit number first, then try again.")
+    if resident_id != resident["resident_id"]:
+        raise HTTPException(status_code=403, detail="You can only change your own bookings.")
+
+
+def _require_waitlist_owner(waitlist_id: str, session_id: str) -> None:
+    entry = _repo.get_waitlist_entry(waitlist_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail=f"No waitlist entry found with id {waitlist_id}.")
+    _require_owner(session_id, entry.get("resident_id"))
+
+
 @app.post("/api/permits/{permit_id}/release")
-def release(permit_id: PermitId, timezone: str | None = None):
+def release(permit_id: PermitId, session_id: SessionQuery, timezone: str | None = None):
+    permit = _repo.get_permit(permit_id)
+    if permit is None:
+        raise HTTPException(status_code=404, detail=f"No permit found with id {permit_id}.")
+    _require_owner(session_id, permit.get("resident_id"))
     result = release_permit(permit_id, tz_name=_safe_timezone(timezone))
     if result.get("error") == "not_found":
         raise HTTPException(status_code=404, detail=result["message"])
     return result
 
 
+
+
 @app.get("/api/waitlist/offers")
-def waitlist_offers(session_id: Annotated[str, Query(min_length=32, max_length=64, pattern=SESSION_ID_PATTERN)]):
+def waitlist_offers(session_id: SessionQuery):
     return get_waitlist_offers(session_id)
 
 
 @app.post("/api/waitlist/{waitlist_id}/accept")
-def waitlist_accept(waitlist_id: WaitlistId, timezone: str | None = None):
+def waitlist_accept(waitlist_id: WaitlistId, session_id: SessionQuery, timezone: str | None = None):
+    _require_waitlist_owner(waitlist_id, session_id)
     result = accept_waitlist_offer(waitlist_id, tz_name=_safe_timezone(timezone))
     if result.get("error") == "not_found":
         raise HTTPException(status_code=404, detail=result["message"])
@@ -217,11 +261,14 @@ def waitlist_accept(waitlist_id: WaitlistId, timezone: str | None = None):
 
 
 @app.post("/api/waitlist/{waitlist_id}/decline")
-def waitlist_decline(waitlist_id: WaitlistId):
+def waitlist_decline(waitlist_id: WaitlistId, session_id: SessionQuery):
+    _require_waitlist_owner(waitlist_id, session_id)
     result = decline_waitlist_offer(waitlist_id)
     if result.get("error") == "not_found":
         raise HTTPException(status_code=404, detail=result["message"])
     return result
+
+
 
 
 # ── Admin / Security — unknown vehicle reports ────────────────────────────────────
@@ -234,9 +281,12 @@ def admin_chat(req: AdminChatRequest, request: Request):
     try:
         with agent_slot():
             check_agent_quota(request, req.session_id)
-            return invoke_agent("admin", req.message, req.session_id)
+            result = invoke_agent("admin", req.message, req.session_id)
     except AgentCoreError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
+    reopen_cleared_spaces()
+    return result
+
 
 
 
@@ -250,7 +300,9 @@ def admin_vehicle_report_expected(report_id: ReportId):
     result = mark_expected(report_id)
     if result.get("error") == "not_found":
         raise HTTPException(status_code=404, detail=result["message"])
+    reopen_cleared_spaces()
     return result
+
 
 
 @app.post("/api/admin/vehicle-reports/{report_id}/notify-security")
@@ -258,4 +310,6 @@ def admin_vehicle_report_notify_security(report_id: ReportId):
     result = notify_security(report_id)
     if result.get("error") == "not_found":
         raise HTTPException(status_code=404, detail=result["message"])
+    reopen_cleared_spaces()
     return result
+

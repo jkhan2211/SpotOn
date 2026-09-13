@@ -121,14 +121,15 @@ export function useAdminDemo() {
           pushNotif('error', 'Action failed', data.detail || 'Could not update the report. Please try again.');
           return;
         }
-        pushNotif('success', 'Marked as expected', 'Decision recorded — the space remains unavailable to residents.');
+        pushNotif('success', 'Marked as expected', 'Decision recorded. The space reopens once no reports need review.');
         fetchVehicleReports();
+        fetchSpaces();
       })
       .catch(() => {
         setReportActionId(null);
         pushNotif('error', 'Action failed', "Sorry, I couldn't reach the SpotOn server. Please try again.");
       });
-  }, [reportActionId, pushNotif, fetchVehicleReports]);
+  }, [reportActionId, pushNotif, fetchVehicleReports, fetchSpaces]);
 
   const reportToSecurity = useCallback((reportId) => {
     if (reportActionId) return;
@@ -147,12 +148,13 @@ export function useAdminDemo() {
           data.message,
         );
         fetchVehicleReports();
+        fetchSpaces();
       })
       .catch(() => {
         setReportActionId(null);
         pushNotif('error', 'Action failed', "Sorry, I couldn't reach the SpotOn server. Please try again.");
       });
-  }, [reportActionId, pushNotif, fetchVehicleReports]);
+    }, [reportActionId, pushNotif, fetchVehicleReports, fetchSpaces]);
 
   return {
     spaces, messages, isTyping, vehicleReports, reportActionId,

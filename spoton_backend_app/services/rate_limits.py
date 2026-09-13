@@ -37,6 +37,9 @@ PER_IP_PER_DAY = _env_int("SPOTON_AGENT_PER_IP_PER_DAY", 150)
 PER_SESSION = _env_int("SPOTON_AGENT_PER_SESSION", 40)
 NEW_SESSIONS_PER_IP_PER_HOUR = _env_int("SPOTON_NEW_SESSIONS_PER_IP_PER_HOUR", 20)
 GLOBAL_PER_DAY = _env_int("SPOTON_AGENT_GLOBAL_PER_DAY", 500)
+# Every /api request, including the DynamoDB-scanning reads. Normal use is a few
+# requests per click; this only stops scripted floods.
+API_PER_IP_PER_MIN = _env_int("SPOTON_API_PER_IP_PER_MIN", 120)
 
 _TEN_MIN, _HOUR, _DAY = 600, 3600, 86400
 _MAX_TRACKED_KEYS = 10_000  # bounds memory when a caller rotates IPs or session ids
@@ -55,6 +58,8 @@ _ip_calls: dict[str, deque] = {}         # ip -> agent call timestamps (last 24 
 _ip_new_sessions: dict[str, deque] = {}  # ip -> first-seen-session timestamps (last hour)
 _sessions: dict[str, list] = {}          # session_id -> [agent calls, last seen]
 _global = {"day": "", "count": 0}
+_ip_requests: dict[str, deque] = {}      # ip -> /api request timestamps (last minute)
+_ip_request_logged: dict[str, float] = {}  # ip -> when a flood was last logged
 
 
 def client_ip(request: Request) -> str:
@@ -151,3 +156,25 @@ def agent_slot():
         yield
     finally:
         _slots.release()
+
+
+def check_request_rate(request: Request) -> None:
+    """Allow at most API_PER_IP_PER_MIN /api requests per IP per minute."""
+    ip = client_ip(request)
+    now = time.time()
+    with _lock:
+        if len(_ip_requests) > _MAX_TRACKED_KEYS:
+            for key in [k for k, q in _ip_requests.items() if not q or now - q[-1] > 60]:
+                del _ip_requests[key]
+                _ip_request_logged.pop(key, None)
+            if len(_ip_requests) > _MAX_TRACKED_KEYS:
+                _reject("SpotOn is busy right now. Please try again later.", 60, "tracking_full", ip)
+        hits = _ip_requests.setdefault(ip, deque())
+        _trim(hits, 60, now)
+        if len(hits) >= API_PER_IP_PER_MIN:
+            # A flood would otherwise write one log line per rejected request.
+            if now - _ip_request_logged.get(ip, 0) > 60:
+                _ip_request_logged[ip] = now
+                logger.warning("api limit reached reason=ip_requests key=%s", ip)
+            raise LimitExceeded("Too many requests. Please slow down and try again in a minute.", 60)
+        hits.append(now)
