@@ -9,5 +9,3 @@ __pycache__/
 *.pyc
 *.pyo
 
-# uv
-uv.lock
