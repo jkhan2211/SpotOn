@@ -8,8 +8,8 @@ how to verify → fix**.
 
 | | |
 |---|---|
-| Account / region | `209479307795` / `us-east-1` |
-| Runtime ARN | `arn:aws:bedrock-agentcore:us-east-1:209479307795:runtime/spoton_spoton-ofYrfc9nZC` |
+| Account / region | `<account-id>` / `us-east-1` |
+| Runtime ARN | `arn:aws:bedrock-agentcore:us-east-1:<account-id>:runtime/spoton_spoton-ofYrfc9nZC` (full value: `agentcore status`) |
 | Runtime id | `spoton_spoton-ofYrfc9nZC` |
 | Log group | `/aws/bedrock-agentcore/runtimes/spoton_spoton-ofYrfc9nZC-DEFAULT` |
 | Model | `global.anthropic.claude-sonnet-4-6` |

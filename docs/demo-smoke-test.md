@@ -6,7 +6,7 @@ Deployed stack:
 |---|---|
 | Frontend | `https://feature-agent-core-deployment.d1eyelfeh8f8tj.amplifyapp.com` (Amplify Hosting) |
 | Backend | `https://sp-5771e51624804f68b17f6cab206ede6f.ecs.us-east-1.on.aws` (ECS Express / Fargate) |
-| Agent | `arn:aws:bedrock-agentcore:us-east-1:209479307795:runtime/spoton_spoton-ofYrfc9nZC` |
+| Agent | `arn:aws:bedrock-agentcore:us-east-1:<account-id>:runtime/spoton_spoton-ofYrfc9nZC` (AgentCore Runtime) |
 | Data | DynamoDB `spoton-*` (6 tables) · SES (live sends) |
 
 ---

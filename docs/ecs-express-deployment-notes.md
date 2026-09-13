@@ -71,11 +71,11 @@ configuration here would have confused cause and effect.
 **Cause, in two parts.** The default VPC had **zero subnets** in the entire region (deleted by
 someone earlier) — fixed with `aws ec2 create-default-subnet` in two AZs, which an ALB requires. But
 the real problem was worse: the main route table's `0.0.0.0/0` route pointed at
-`igw-0c1df7f31d7e9e3c2`, **an internet gateway that no longer exists**. AWS labelled the route state
-**`blackhole`**. A different, working gateway (`igw-0aa37e7e6f4d1043d`) was attached to the VPC, but
+`<deleted-igw-id>`, **an internet gateway that no longer exists**. AWS labelled the route state
+**`blackhole`**. A different, working gateway (`<attached-igw-id>`) was attached to the VPC, but
 nothing routed to it.
-**Fix:** `aws ec2 replace-route --route-table-id rtb-… --destination-cidr-block 0.0.0.0/0
---gateway-id igw-0aa37e…` (`replace-route`, not `create-route` — the entry already existed).
+**Fix:** `aws ec2 replace-route --route-table-id <rtb-id> --destination-cidr-block 0.0.0.0/0
+--gateway-id <attached-igw-id>` (`replace-route`, not `create-route` — the entry already existed).
 **Lessons:**
 - **`i/o timeout` means no route; `AccessDenied` means no permission.** They look similar in a
   deployment log and have completely different fixes.
