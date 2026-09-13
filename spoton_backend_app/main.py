@@ -1,8 +1,12 @@
 import os
+from typing import Annotated
+from zoneinfo import ZoneInfo
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Path, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from fastapi.responses import JSONResponse
+from pydantic import AfterValidator, BaseModel, StringConstraints
+
 from repositories import get_repository
 from tools.parking_tools import (
     release_permit,
@@ -46,15 +50,58 @@ app.add_middleware(
 
 
 
+# ── Request limits ────────────────────────────────────────────────────────────────
+# The API is public, so every value a caller controls is bounded here — before any
+# DynamoDB read, AgentCore invocation or email. Real browser traffic is far below these.
+MAX_BODY_BYTES = 16 * 1024               # a real chat request is well under 1 KB
+MAX_MESSAGE_CHARS = 1000                 # ~250 tokens; typed demo messages are much shorter
+SESSION_ID_PATTERN = r"^[A-Za-z0-9-]+$"  # React sends crypto.randomUUID() (36 chars)
+
+
+@app.middleware("http")
+async def limit_request_body(request: Request, call_next):
+    length = request.headers.get("content-length")
+    too_large = length is not None and (not length.isdigit() or int(length) > MAX_BODY_BYTES)
+    chunked = "chunked" in request.headers.get("transfer-encoding", "").lower()
+    if too_large or chunked:
+        return JSONResponse({"detail": "Request body too large."}, status_code=413)
+    return await call_next(request)
+
+
+def _safe_timezone(tz_name: str | None) -> str:
+    """The browser-reported zone is written into the agent's system prompt, so only a
+    real IANA zone name gets through; anything else becomes UTC."""
+    if not tz_name or len(tz_name) > 64:
+        return "UTC"
+    try:
+        ZoneInfo(tz_name)
+    except Exception:
+        return "UTC"
+    return tz_name
+
+
+Message = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_MESSAGE_CHARS)]
+SessionId = Annotated[str, StringConstraints(min_length=32, max_length=64, pattern=SESSION_ID_PATTERN)]
+Timezone = Annotated[str, AfterValidator(_safe_timezone)]
+
+# Ids are generated server-side (see tools/); anything in another shape cannot exist,
+# so it is rejected before it reaches DynamoDB as a key.
+PermitId = Annotated[str, Path(pattern=r"^SP-[0-9A-F]{6}$")]
+WaitlistId = Annotated[str, Path(pattern=r"^WL-[0-9A-F]{6}$")]
+ReportId = Annotated[str, Path(pattern=r"^UV-[0-9A-F]{6}$")]
+
+
 class ChatRequest(BaseModel):
-    message: str
-    session_id: str = "default"
-    timezone: str = "UTC"  # browser-reported IANA zone, e.g. "America/Toronto"
+    message: Message
+    session_id: SessionId
+    timezone: Timezone = "UTC"  # browser-reported IANA zone, e.g. "America/Toronto"
 
 
 class AdminChatRequest(BaseModel):
-    message: str
-    session_id: str = "admin-default"
+    message: Message
+    session_id: SessionId
+
+
 
 
 @app.get("/")
@@ -133,21 +180,21 @@ def chat(req: ChatRequest):
 
 
 @app.post("/api/permits/{permit_id}/release")
-def release(permit_id: str, timezone: str | None = None):
-    result = release_permit(permit_id, tz_name=timezone)
+def release(permit_id: PermitId, timezone: str | None = None):
+    result = release_permit(permit_id, tz_name=_safe_timezone(timezone))
     if result.get("error") == "not_found":
         raise HTTPException(status_code=404, detail=result["message"])
     return result
 
 
 @app.get("/api/waitlist/offers")
-def waitlist_offers(session_id: str = "default"):
+def waitlist_offers(session_id: Annotated[str, Query(min_length=32, max_length=64, pattern=SESSION_ID_PATTERN)]):
     return get_waitlist_offers(session_id)
 
 
 @app.post("/api/waitlist/{waitlist_id}/accept")
-def waitlist_accept(waitlist_id: str, timezone: str | None = None):
-    result = accept_waitlist_offer(waitlist_id, tz_name=timezone)
+def waitlist_accept(waitlist_id: WaitlistId, timezone: str | None = None):
+    result = accept_waitlist_offer(waitlist_id, tz_name=_safe_timezone(timezone))
     if result.get("error") == "not_found":
         raise HTTPException(status_code=404, detail=result["message"])
     if "error" in result:
@@ -156,7 +203,7 @@ def waitlist_accept(waitlist_id: str, timezone: str | None = None):
 
 
 @app.post("/api/waitlist/{waitlist_id}/decline")
-def waitlist_decline(waitlist_id: str):
+def waitlist_decline(waitlist_id: WaitlistId):
     result = decline_waitlist_offer(waitlist_id)
     if result.get("error") == "not_found":
         raise HTTPException(status_code=404, detail=result["message"])
@@ -183,7 +230,7 @@ def admin_vehicle_reports():
 
 
 @app.post("/api/admin/vehicle-reports/{report_id}/expected")
-def admin_vehicle_report_expected(report_id: str):
+def admin_vehicle_report_expected(report_id: ReportId):
     result = mark_expected(report_id)
     if result.get("error") == "not_found":
         raise HTTPException(status_code=404, detail=result["message"])
@@ -191,7 +238,7 @@ def admin_vehicle_report_expected(report_id: str):
 
 
 @app.post("/api/admin/vehicle-reports/{report_id}/notify-security")
-def admin_vehicle_report_notify_security(report_id: str):
+def admin_vehicle_report_notify_security(report_id: ReportId):
     result = notify_security(report_id)
     if result.get("error") == "not_found":
         raise HTTPException(status_code=404, detail=result["message"])
