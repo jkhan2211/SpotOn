@@ -156,11 +156,25 @@ Step-by-step notes, including every deployment error hit and how it was fixed:
 | Admin: matched plate | `ADM424` | Matches a registered resident vehicle (unit 14) |
 | Admin: unknown plate | `ZZZ999` | No match; flagged for human review |
 
+## Public demo safeguards
+
+The live demo is open to anyone, so the API protects itself instead of trusting the browser:
+
+- **Usage limits** on agent messages (per IP, per conversation, per day in total, and concurrent calls) plus a per-IP ceiling on all API requests. The limits keep model cost bounded and are tunable through environment variables without a rebuild.
+- **Ownership checks:** a booking or waitlist offer can only be released, accepted or declined from the browser session that identified as its resident.
+- **Input bounds:** request body size, message length, and strict formats for ids, sessions and timezones.
+- **No personal data or internals in responses:** chat responses return only a resident's first name and unit, and errors are generic (details are logged, not returned).
+- **Least-privilege IAM:** the API and the agents can only reach SpotOn's six DynamoDB tables, one SES identity and one AgentCore runtime, with no delete permissions.
+- **Email** only goes to verified addresses (Amazon SES sandbox).
+
+See [the demo test plan](docs/demo-smoke-test.md#live-demo-safeguards-backend-v3) for the exact limits.
+
 ## Known limitations
 
 This is a hackathon prototype, not a production system:
-- **No real sign-in.** Residents are identified by unit number, and the admin dashboard is open.
+- **No real sign-in.** Residents are identified by unit number, so anyone who claims a unit can act as that resident. The admin dashboard is intentionally open so it can be explored.
 - **Offers aren't pushed.** The page refreshes its data after actions instead of receiving live updates.
-- **Some policies aren't built yet:** permit extensions and automatic no-show release.
+- **Some policies aren't built yet:** permit extensions, automatic no-show release, and per-resident caps on bookings or waitlist entries.
+- **Limits are in-memory.** They reset when the backend restarts and are exact only while it runs a single task.
 
-> All residents, units, vehicles, plates and permits are fictional demo data.
+> All residents, units, vehicles, plates and permits are fictional demo data. Please don't enter real personal information in the demo.
