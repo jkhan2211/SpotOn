@@ -1,11 +1,11 @@
 resident_id,unit_number,first_name,last_name,email,status,parking_privileges
 1,14,Netty,Blees,mjunaidtestlabaws01+netty@gmail.com,active,enabled
 2,9,Silvano,Cromarty,mjunaidtestlabaws01+silvano@gmail.com,active,enabled
-3,39,Karole,Demschke,kdemschke2@walmart.com,active,enabled
-4,3,Vick,Jewise,vjewise3@theglobeandmail.com,active,enabled
-5,35,Duff,Bariball,dbariball4@flickr.com,active,enabled
-6,7,Johann,Leydon,jleydon5@princeton.edu,inactive,disabled
-7,5,Tobe,Pulhoster,tpulhoster6@princeton.edu,active,enabled
-8,6,Maximilien,Culpen,mculpen7@google.pl,inactive,disabled
-9,25,Carin,Nussgen,cnussgen8@slashdot.org,active,enabled
-10,39,Poppy,Le Grove,plegrove9@desdev.cn,inactive,disabled
+3,39,Karole,Demschke,karole.demschke@example.com,active,enabled
+4,3,Vick,Jewise,vick.jewise@example.com,active,enabled
+5,35,Duff,Bariball,duff.bariball@example.com,active,enabled
+6,7,Johann,Leydon,johann.leydon@example.com,inactive,disabled
+7,5,Tobe,Pulhoster,tobe.pulhoster@example.com,active,enabled
+8,6,Maximilien,Culpen,maximilien.culpen@example.com,inactive,disabled
+9,25,Carin,Nussgen,carin.nussgen@example.com,active,enabled
+10,39,Poppy,Le Grove,poppy.legrove@example.com,inactive,disabled
