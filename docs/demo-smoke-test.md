@@ -16,7 +16,7 @@ Deployed stack:
 Run this before recording **and** before each full rehearsal. Testing dirties state.
 
 ```bash
-cd /home/junaidkhandsi/hackathons/spoton_app
+cd <repo-root>
 ./scripts/seed_mock_data.sh
 cd spoton_backend_app && AWS_PROFILE=spoton uv run python seed_dynamodb.py
 ```
