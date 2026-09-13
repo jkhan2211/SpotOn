@@ -1,5 +1,5 @@
 {
-  "image": "209479307795.dkr.ecr.us-east-1.amazonaws.com/spoton-backend:v2",
+  "image": "209479307795.dkr.ecr.us-east-1.amazonaws.com/spoton-backend:v3",
   "containerPort": 8000,
   "environment": [
     { "name": "SPOTON_DATA_BACKEND", "value": "dynamodb" },
@@ -14,7 +14,7 @@
     { "name": "SPOTON_SES_FROM_EMAIL", "value": "mjunaidtestlabaws01@gmail.com" },
     { "name": "SPOTON_SECURITY_EMAIL", "value": "mjunaidtestlabaws01+security@gmail.com" },
     { "name": "SPOTON_EMAIL_MODE", "value": "live" },
-    { "name": "CORS_ALLOWED_ORIGINS", "value": "http://localhost:3000,http://localhost:5173,https://feature-agent-core-deployment.d1eyelfeh8f8tj.amplifyapp.com" }
-
+    { "name": "SPOTON_AGENT_GLOBAL_PER_DAY", "value": "300" },
+    { "name": "CORS_ALLOWED_ORIGINS", "value": "https://main.d1eyelfeh8f8tj.amplifyapp.com,https://feature-agent-core-deployment.d1eyelfeh8f8tj.amplifyapp.com" }
   ]
 }
